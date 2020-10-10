@@ -1,0 +1,24 @@
+diff -r f7dfc146779d sys/lib/kbmap/ru
+--- a/sys/lib/kbmap/ru	Mon Oct 05 14:10:12 2020 -0700
++++ b/sys/lib/kbmap/ru	Sat Oct 10 21:12:18 2020 +0300
+@@ -56,7 +56,7 @@
+ 0	55	'*
+ 0	56	0xf863
+ 0	57	0x20
+-0	58	0xf862
++0	58	0xf864
+ 0	59	0xf001
+ 0	60	0xf002
+ 0	61	0xf003
+diff -r f7dfc146779d sys/lib/kbmap/us
+--- a/sys/lib/kbmap/us	Mon Oct 05 14:10:12 2020 -0700
++++ b/sys/lib/kbmap/us	Sat Oct 10 21:12:18 2020 +0300
+@@ -56,7 +56,7 @@
+ 0	55	'*
+ 0	56	0xf863
+ 0	57	0x20
+-0	58	0xf862
++0	58	0xf864
+ 0	59	0xf001
+ 0	60	0xf002
+ 0	61	0xf003
