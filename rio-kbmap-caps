@@ -1,17 +1,14 @@
 #!/bin/rc
-
-# patch rio with  rio-kbmap-caps.patch
-# start rio
-# rio-kbmap-caps < /srv/riocaps*
-# profit!
-
 l='us'
-while (read >/dev/null) {
-	switch ($l) {
-	case ru
-		l = 'us'
-	case us
-		l = 'ru'
+while (line=`{read}) {
+	switch ($line) {
+		case caps
+			switch ($l) {
+			case ru
+				l = 'us'
+			case us
+				l = 'ru'
+			}
+			cat /sys/lib/kbmap/$l > /dev/kbmap
 	}
-	cat /sys/lib/kbmap/$l > /dev/kbmap
 }
