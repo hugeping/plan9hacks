@@ -110,7 +110,7 @@ diff -r 484d3f8e5978 sys/src/cmd/rio/rio.c
  			shiftdown = utfrune(s+1, Kshift) != nil;
 -		if(input == nil || sendp(input->ck, s) <= 0)
 +		}
-+		if (capsc != nil && !shiftdown && strlen(s) == 4 && *((ushort*)(s+2)) == 0x9780) {
++		if (capsc != nil && !shiftdown && strlen(s) == 4 && utfrune(s+1, Kcaps) != nil) {
 +			char *caps = strdup("caps\n");
 +			if (sendp(capsc, caps) <= 0)
 +				free(caps);
