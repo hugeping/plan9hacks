@@ -1,7 +1,7 @@
-diff -r 484d3f8e5978 sys/src/cmd/rio/dat.h
---- a/sys/src/cmd/rio/dat.h	Tue Sep 29 07:28:47 2020 -0700
-+++ b/sys/src/cmd/rio/dat.h	Sat Oct 10 15:16:44 2020 +0300
-@@ -344,8 +344,11 @@
+diff -r f7dfc146779d sys/src/cmd/rio/dat.h
+--- a/sys/src/cmd/rio/dat.h	Mon Oct 05 14:10:12 2020 -0700
++++ b/sys/src/cmd/rio/dat.h	Sun Oct 11 13:07:26 2020 +0300
+@@ -345,8 +345,11 @@
  char		*startdir;
  int		sweeping;
  int		wctlfd;
@@ -13,9 +13,9 @@ diff -r 484d3f8e5978 sys/src/cmd/rio/dat.h
  int		errorshouldabort;
  int		menuing;		/* menu action is pending; waiting for window to be indicated */
  int		snarfversion;	/* updated each time it is written */
-diff -r 484d3f8e5978 sys/src/cmd/rio/fsys.c
---- a/sys/src/cmd/rio/fsys.c	Tue Sep 29 07:28:47 2020 -0700
-+++ b/sys/src/cmd/rio/fsys.c	Sat Oct 10 15:16:44 2020 +0300
+diff -r f7dfc146779d sys/src/cmd/rio/fsys.c
+--- a/sys/src/cmd/rio/fsys.c	Mon Oct 05 14:10:12 2020 -0700
++++ b/sys/src/cmd/rio/fsys.c	Sun Oct 11 13:07:26 2020 +0300
 @@ -50,6 +50,7 @@
  
  char	srvpipe[64];
@@ -92,25 +92,35 @@ diff -r 484d3f8e5978 sys/src/cmd/rio/fsys.c
 +	}
 +	close(capsfd);
 +}
-diff -r 484d3f8e5978 sys/src/cmd/rio/rio.c
---- a/sys/src/cmd/rio/rio.c	Tue Sep 29 07:28:47 2020 -0700
-+++ b/sys/src/cmd/rio/rio.c	Sat Oct 10 15:16:44 2020 +0300
-@@ -1,4 +1,5 @@
- #include <u.h>
-+#include <stdio.h>
- #include <libc.h>
- #include <draw.h>
- #include <thread.h>
-@@ -344,9 +345,15 @@
+diff -r f7dfc146779d sys/src/cmd/rio/rio.c
+--- a/sys/src/cmd/rio/rio.c	Mon Oct 05 14:10:12 2020 -0700
++++ b/sys/src/cmd/rio/rio.c	Sun Oct 11 13:07:26 2020 +0300
+@@ -336,6 +336,7 @@
+ 			write(window[i]->notefd, "hangup", 6); 
+ }
+ 
++int capsdown = 0;
+ void
+ keyboardthread(void*)
+ {
+@@ -344,9 +345,22 @@
  	threadsetname("keyboardthread");
  
  	while(s = recvp(kbdchan)){
 -		if(*s == 'k' || *s == 'K')
-+		if(*s == 'k' || *s == 'K') {
- 			shiftdown = utfrune(s+1, Kshift) != nil;
+-			shiftdown = utfrune(s+1, Kshift) != nil;
 -		if(input == nil || sendp(input->ck, s) <= 0)
++		int caps = (*s == 'K' && capsdown && !shiftdown);
++		if(*s == 'k') {
++			if (utfrune(s+1, Kshift) != nil) {
++				shiftdown = 1;
++			} else if (utfrune(s+1, Kcaps) != nil) {
++				capsdown = 1;
++			}
++		} else if(*s == 'K') {
++			shiftdown = capsdown = 0;
 +		}
-+		if (capsc != nil && !shiftdown && strlen(s) == 4 && utfrune(s+1, Kcaps) != nil) {
++		if (capsc != nil && caps) {
 +			char *caps = strdup("caps\n");
 +			if (sendp(capsc, caps) <= 0)
 +				free(caps);
