@@ -1,6 +1,6 @@
 diff -r f7dfc146779d sys/src/9/pc/etheralc.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/sys/src/9/pc/etheralc.c	Mon Oct 12 21:18:14 2020 +0300
++++ b/sys/src/9/pc/etheralc.c	Mon Oct 12 21:48:45 2020 +0300
 @@ -0,0 +1,2087 @@
 +/* this code is ported from openbsd if_alc.c */
 +/* by Peter Kosyh */
@@ -2091,7 +2091,7 @@ diff -r f7dfc146779d sys/src/9/pc/etheralc.c
 +}
 diff -r f7dfc146779d sys/src/9/pc/etheralc.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/sys/src/9/pc/etheralc.h	Mon Oct 12 21:18:14 2020 +0300
++++ b/sys/src/9/pc/etheralc.h	Mon Oct 12 21:48:45 2020 +0300
 @@ -0,0 +1,1155 @@
 +/* Taken from if_alcreg.h from OpenBSD */
 +
@@ -3250,8 +3250,8 @@ diff -r f7dfc146779d sys/src/9/pc/etheralc.h
 +#define	ALC_FLAG_MSIX		0x0008
 diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/sys/src/9/pc/etherathn.c	Mon Oct 12 21:18:14 2020 +0300
-@@ -0,0 +1,3776 @@
++++ b/sys/src/9/pc/etherathn.c	Mon Oct 12 21:48:45 2020 +0300
+@@ -0,0 +1,3774 @@
 +#include "u.h"
 +#include "../port/lib.h"
 +#include "mem.h"
@@ -5191,11 +5191,9 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 +	}
 +	if (k == 0) {
 +		// print("%s: no rates avail for %d (%x)\n", ctlr->edev->name, ctlr->aid, wn->validrates);
-+		freeb(b);
-+		goto out;
++		for (i = k; i < 4; i++)
++			ridx[i] = 0; /* lowest rate */
 +	}
-+	for (i = k; i < 4; i++)
-+		ridx[i] = ridx[0];
 +	ctlr->tt = NEXT(ctlr->tt, ATHN_NTXBUFS);
 +	ctlr->tb[ctlr->tt] = b;
 +	ds = &ctlr->tx_ring[ctlr->tt];
@@ -7030,7 +7028,7 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 +}
 diff -r f7dfc146779d sys/src/9/pc/etherathn.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/sys/src/9/pc/etherathn.h	Mon Oct 12 21:18:14 2020 +0300
++++ b/sys/src/9/pc/etherathn.h	Mon Oct 12 21:48:45 2020 +0300
 @@ -0,0 +1,4719 @@
 +/*	$OpenBSD: athnreg.h,v 1.7 2010/04/07 16:19:33 damien Exp $	*/
 +
@@ -11753,7 +11751,7 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.h
 +#define	IEEE80211_FC1_ORDER			0x80
 diff -r f7dfc146779d sys/src/9/pc/mkfile
 --- a/sys/src/9/pc/mkfile	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/9/pc/mkfile	Mon Oct 12 21:18:14 2020 +0300
++++ b/sys/src/9/pc/mkfile	Mon Oct 12 21:48:45 2020 +0300
 @@ -127,6 +127,7 @@
  ether8169.$O:			../port/ethermii.h
  etherdp83820.$O:		../port/ethermii.h
@@ -11772,7 +11770,7 @@ diff -r f7dfc146779d sys/src/9/pc/mkfile
  initcode.out:		init9.$O initcode.$O /$objtype/lib/libc.a
 diff -r f7dfc146779d sys/src/9/pc/pc
 --- a/sys/src/9/pc/pc	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/9/pc/pc	Mon Oct 12 21:18:14 2020 +0300
++++ b/sys/src/9/pc/pc	Mon Oct 12 21:48:45 2020 +0300
 @@ -72,6 +72,7 @@
  	ethervgbe	pci ethermii
  	ethervt6102	pci ethermii
@@ -11791,7 +11789,7 @@ diff -r f7dfc146779d sys/src/9/pc/pc
  	pcmciamodem
 diff -r f7dfc146779d sys/src/9/pc64/mkfile
 --- a/sys/src/9/pc64/mkfile	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/9/pc64/mkfile	Mon Oct 12 21:18:14 2020 +0300
++++ b/sys/src/9/pc64/mkfile	Mon Oct 12 21:48:45 2020 +0300
 @@ -131,11 +131,13 @@
  ether8169.$O:			../port/ethermii.h
  etherdp83820.$O:		../port/ethermii.h
@@ -11808,7 +11806,7 @@ diff -r f7dfc146779d sys/src/9/pc64/mkfile
  
 diff -r f7dfc146779d sys/src/9/pc64/pc64
 --- a/sys/src/9/pc64/pc64	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/9/pc64/pc64	Mon Oct 12 21:18:14 2020 +0300
++++ b/sys/src/9/pc64/pc64	Mon Oct 12 21:48:45 2020 +0300
 @@ -67,6 +67,7 @@
  #	etherelnk3	pci
  #	etherga620	pci
