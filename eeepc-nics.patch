@@ -1,6 +1,6 @@
 diff -r f7dfc146779d sys/src/9/pc/etheralc.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/sys/src/9/pc/etheralc.c	Mon Oct 12 16:24:00 2020 +0300
++++ b/sys/src/9/pc/etheralc.c	Mon Oct 12 21:18:14 2020 +0300
 @@ -0,0 +1,2087 @@
 +/* this code is ported from openbsd if_alc.c */
 +/* by Peter Kosyh */
@@ -2091,7 +2091,7 @@ diff -r f7dfc146779d sys/src/9/pc/etheralc.c
 +}
 diff -r f7dfc146779d sys/src/9/pc/etheralc.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/sys/src/9/pc/etheralc.h	Mon Oct 12 16:24:00 2020 +0300
++++ b/sys/src/9/pc/etheralc.h	Mon Oct 12 21:18:14 2020 +0300
 @@ -0,0 +1,1155 @@
 +/* Taken from if_alcreg.h from OpenBSD */
 +
@@ -3250,8 +3250,8 @@ diff -r f7dfc146779d sys/src/9/pc/etheralc.h
 +#define	ALC_FLAG_MSIX		0x0008
 diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/sys/src/9/pc/etherathn.c	Mon Oct 12 16:24:00 2020 +0300
-@@ -0,0 +1,3644 @@
++++ b/sys/src/9/pc/etherathn.c	Mon Oct 12 21:18:14 2020 +0300
+@@ -0,0 +1,3776 @@
 +#include "u.h"
 +#include "../port/lib.h"
 +#include "mem.h"
@@ -3320,6 +3320,7 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 +	int mac_ver;
 +	int phy_rev;
 +	int temp;
++	int ticks;
 +	u32int ie;
 +	u32int *nic;
 +	const struct athn_gain		*tx_gain;
@@ -6569,6 +6570,7 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 +		ctlr->th = NEXT(ctlr->th, ATHN_NTXBUFS);
 +		ctlr->txlen --;
 +		xmt ++;
++		ctlr->ticks = 0;
 +	}
 +	if (ctlr->txlen > 0 && xmt) {
 +		AR_WRITE(ctlr, AR_QTXDP(0), PCIWADDR(&ctlr->tx_ring[ctlr->th]));
@@ -6735,6 +6737,28 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 +	DPRINTF(("Rx DMA failed to stop\n"));
 +	return (ETIMEDOUT);
 +}
++void
++athn_tx_reclaim(Ctlr *ctlr)
++{
++	int h = ctlr->th;
++	while (ctlr->txlen > 0) {
++		if (ctlr->tb[h] == nil) {
++			print("%s: can't reclaim tx ring\n",
++			      ctlr->edev->name);
++			ctlr->txlen = 0;
++			break;
++		}
++		freeb(ctlr->tb[h]);
++		ctlr->tb[h] = nil;
++		memset(&ctlr->tx_ring[h], 0, sizeof(struct ar_tx_desc));
++		ctlr->txlen --;
++		h = NEXT(h, ATHN_NTXBUFS);
++	}
++	ctlr->th = h;
++}
++void
++athn_stop_tx_dma(struct athn_softc *sc, int qid);
++
 +
 +int
 +athn_switch_chan(struct athn_softc *sc)
@@ -6745,10 +6769,9 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 +	athn_disable_interrupts(sc);
 +
 +	/* /\* Stop all Tx queues. *\/ */
-+	/* for (qid = 0; qid < ATHN_QID_COUNT; qid++) */
-+	/* 	athn_stop_tx_dma(sc, qid); */
-+	/* for (qid = 0; qid < ATHN_QID_COUNT; qid++) */
-+	/* 	athn_tx_reclaim(sc, qid); */
++	for (qid = 0; qid < ATHN_QID_COUNT; qid++)
++	 	athn_stop_tx_dma(sc, qid);
++	athn_tx_reclaim(sc);
 +
 +	/* Stop Rx. */
 +	AR_SETBITS(sc, AR_DIAG_SW, AR_DIAG_RX_DIS);
@@ -6780,11 +6803,118 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 +	return 0;
 +}
 +
++int
++athn_tx_pending(struct athn_softc *sc, int qid)
++{
++	return (MS(AR_READ(sc, AR_QSTS(qid)), AR_Q_STS_PEND_FR_CNT_M,
++		   AR_Q_STS_PEND_FR_CNT_S) != 0 ||
++	    (AR_READ(sc, AR_Q_TXE) & (1 << qid)) != 0);
++}
++
++void
++athn_stop_tx_dma(struct athn_softc *sc, int qid)
++{
++	uint32_t tsflo;
++	int ntries, i;
++
++	AR_WRITE(sc, AR_Q_TXD, 1 << qid);
++	for (ntries = 0; ntries < 40; ntries++) {
++		if (!athn_tx_pending(sc, qid))
++			break;
++		DELAY(100);
++	}
++	if (ntries == 40) {
++		for (i = 0; i < 2; i++) {
++			tsflo = AR_READ(sc, AR_TSF_L32) / 1024;
++			AR_WRITE(sc, AR_QUIET2,
++				 SM(AR_QUIET2_QUIET_DUR_S, AR_QUIET2_QUIET_DUR_M, 10));
++			AR_WRITE(sc, AR_QUIET_PERIOD, 100);
++			AR_WRITE(sc, AR_NEXT_QUIET_TIMER, tsflo);
++			AR_SETBITS(sc, AR_TIMER_MODE, AR_QUIET_TIMER_EN);
++			if (AR_READ(sc, AR_TSF_L32) / 1024 == tsflo)
++				break;
++		}
++		AR_SETBITS(sc, AR_DIAG_SW, AR_DIAG_FORCE_CH_IDLE_HIGH);
++		DELAY(200);
++		AR_CLRBITS(sc, AR_TIMER_MODE, AR_QUIET_TIMER_EN);
++
++		for (ntries = 0; ntries < 40; ntries++) {
++			if (!athn_tx_pending(sc, qid))
++				break;
++			DELAY(100);
++		}
++
++		AR_CLRBITS(sc, AR_DIAG_SW, AR_DIAG_FORCE_CH_IDLE_HIGH);
++	}
++	AR_WRITE(sc, AR_Q_TXD, 0);
++}
++
++void
++athn_stop(Ctlr *sc)
++{
++	int qid;
++
++	/* Disable interrupts. */
++	athn_disable_interrupts(sc);
++	/* Acknowledge interrupts (avoids interrupt storms.) */
++	AR_WRITE(sc, AR_INTR_SYNC_CAUSE, 0xffffffff);
++	AR_WRITE(sc, AR_INTR_SYNC_MASK, 0);
++
++	for (qid = 0; qid < ATHN_QID_COUNT; qid++)
++		athn_stop_tx_dma(sc, qid);
++	/* XXX call athn_hw_reset if Tx still pending? */
++	athn_tx_reclaim(sc);
++
++	/* Stop Rx. */
++	AR_SETBITS(sc, AR_DIAG_SW, AR_DIAG_RX_DIS);
++	AR_WRITE(sc, AR_MIBC, AR_MIBC_FMC);
++	AR_WRITE(sc, AR_MIBC, AR_MIBC_CMC);
++	AR_WRITE(sc, AR_FILT_OFDM, 0);
++	AR_WRITE(sc, AR_FILT_CCK, 0);
++	athn_set_rxfilter(sc, 0);
++	athn_stop_rx_dma(sc);
++
++	athn_reset(sc, 0);
++	athn_init_pll(sc);
++	athn_set_power_awake(sc);
++	athn_reset(sc, 1);
++	athn_init_pll(sc);
++
++	athn_set_power_sleep(sc);
++}
++
++static void
++watchdog(void* arg)
++{
++	Ether *ether;
++	Ctlr *ctlr;
++
++	ether = arg;
++	for(;;){
++		tsleep(&up->sleep, return0, 0, 5000);
++		ctlr = ether->ctlr;
++		qlock(ctlr);
++		ilock(ctlr);
++		if (ctlr->ticks > 0) {
++			print("%s: resetting,\n", ctlr->edev->name);
++			athn_stop(ctlr);
++			ctlr->th = 0; ctlr->tt = ATHN_NTXBUFS - 1;
++			memset(ctlr->tx_ring, 0, sizeof(struct ar_tx_desc) * ATHN_NTXBUFS);
++			athn_init(ctlr);
++		}
++		if (ctlr->txlen > 0)
++			ctlr->ticks ++;
++		iunlock(ctlr);
++		qunlock(ctlr);
++	}
++	pexit("disabled", 1);
++}
 +
 +static void
 +athnattach(Ether *edev)
 +{
 +	Ctlr *ctlr;
++	char name[KNAMELEN];
 +
 +	ctlr = edev->ctlr;
 +	eqlock(ctlr);
@@ -6799,6 +6929,8 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 +			// print("channel: %d\n", ctlr->channel);
 +		}
 +		dma_alloc(ctlr);
++		snprint(name, KNAMELEN, "#l%dwatchdog", edev->ctlrno);
++		kproc(name, watchdog, edev);
 +		ctlr->attached = 1;
 +		athn_init(ctlr);
 +//		ctlr->channel = 1;
@@ -6898,7 +7030,7 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 +}
 diff -r f7dfc146779d sys/src/9/pc/etherathn.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000
-+++ b/sys/src/9/pc/etherathn.h	Mon Oct 12 16:24:00 2020 +0300
++++ b/sys/src/9/pc/etherathn.h	Mon Oct 12 21:18:14 2020 +0300
 @@ -0,0 +1,4719 @@
 +/*	$OpenBSD: athnreg.h,v 1.7 2010/04/07 16:19:33 damien Exp $	*/
 +
@@ -11621,7 +11753,7 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.h
 +#define	IEEE80211_FC1_ORDER			0x80
 diff -r f7dfc146779d sys/src/9/pc/mkfile
 --- a/sys/src/9/pc/mkfile	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/9/pc/mkfile	Mon Oct 12 16:24:00 2020 +0300
++++ b/sys/src/9/pc/mkfile	Mon Oct 12 21:18:14 2020 +0300
 @@ -127,6 +127,7 @@
  ether8169.$O:			../port/ethermii.h
  etherdp83820.$O:		../port/ethermii.h
@@ -11640,7 +11772,7 @@ diff -r f7dfc146779d sys/src/9/pc/mkfile
  initcode.out:		init9.$O initcode.$O /$objtype/lib/libc.a
 diff -r f7dfc146779d sys/src/9/pc/pc
 --- a/sys/src/9/pc/pc	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/9/pc/pc	Mon Oct 12 16:24:00 2020 +0300
++++ b/sys/src/9/pc/pc	Mon Oct 12 21:18:14 2020 +0300
 @@ -72,6 +72,7 @@
  	ethervgbe	pci ethermii
  	ethervt6102	pci ethermii
@@ -11659,7 +11791,7 @@ diff -r f7dfc146779d sys/src/9/pc/pc
  	pcmciamodem
 diff -r f7dfc146779d sys/src/9/pc64/mkfile
 --- a/sys/src/9/pc64/mkfile	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/9/pc64/mkfile	Mon Oct 12 16:24:00 2020 +0300
++++ b/sys/src/9/pc64/mkfile	Mon Oct 12 21:18:14 2020 +0300
 @@ -131,11 +131,13 @@
  ether8169.$O:			../port/ethermii.h
  etherdp83820.$O:		../port/ethermii.h
@@ -11676,7 +11808,7 @@ diff -r f7dfc146779d sys/src/9/pc64/mkfile
  
 diff -r f7dfc146779d sys/src/9/pc64/pc64
 --- a/sys/src/9/pc64/pc64	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/9/pc64/pc64	Mon Oct 12 16:24:00 2020 +0300
++++ b/sys/src/9/pc64/pc64	Mon Oct 12 21:18:14 2020 +0300
 @@ -67,6 +67,7 @@
  #	etherelnk3	pci
  #	etherga620	pci
