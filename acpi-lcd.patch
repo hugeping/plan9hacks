@@ -1,0 +1,139 @@
+diff -r f7dfc146779d sys/src/cmd/aux/acpi.c
+--- a/sys/src/cmd/aux/acpi.c	Mon Oct 05 14:10:12 2020 -0700
++++ b/sys/src/cmd/aux/acpi.c	Mon Oct 12 21:51:06 2020 +0300
+@@ -1,5 +1,6 @@
+ #include <u.h>
+ #include <libc.h>
++#include <stdio.h>
+ #include <fcall.h>
+ #include <thread.h>
+ #include <9p.h>
+@@ -61,6 +62,7 @@
+ 	Qroot = 0,
+ 	Qbattery,
+ 	Qcputemp,
++	Qlcd,
+ 	Qctl,
+ };
+ 
+@@ -69,10 +71,14 @@
+ static void ctlwrite(Req*);
+ static void batteryread(Req*);
+ static void tmpread(Req*);
++static void lcdread(Req*);
++static void lcdwrite(Req*);
+ 
+ int ec, mem, iofd[5], nbats, ntherms, rp, wp;
+ char *units[] = {"mW", "mA"};
+ Battery bats[4];
++void *lcd = nil;
++void *lcdq = nil;
+ Thermal therms[4];
+ Channel *creq, *cevent;
+ Req *rlist, **tailp;
+@@ -81,6 +87,7 @@
+ 	{{Qroot,0,QTDIR},	"/",		DMDIR|0555,	rootread,		nil},
+ 	{{Qbattery},		"battery",	0444,		batteryread,	nil},
+ 	{{Qcputemp},		"cputemp",	0444,		tmpread,		nil},
++	{{Qlcd},			"lcd",		0666,		lcdread,		lcdwrite},
+ 	{{Qctl},			"ctl",		0666,		ctlread,		ctlwrite},
+ };
+ 
+@@ -120,6 +127,20 @@
+ }
+ 
+ static int
++enumlcd(void *dot, void *)
++{
++	lcd = dot;
++	return 1;
++}
++
++static int
++enumlcdq(void *dot, void *)
++{
++	lcdq = dot;
++	return 1;
++}
++
++static int
+ enumbat(void *dot, void *)
+ {
+ 	void *p, *r, **rr;
+@@ -280,6 +301,58 @@
+ 	respond(r, nil);
+ }
+ 
++static int
++lcdcur(void)
++{
++	void *r;
++	if (lcdq == nil)
++		return -1;
++	if (amleval(lcdq, "", &r) >= 0)
++			return amlint(r) & 0xff;
++	return -1;
++}
++
++static void
++lcdread(Req *req)
++{
++	char buf[32];
++	int cur = lcdcur();
++	if (cur != -1) {
++		sprintf(buf, "%d\n", cur&0xff);
++		readstr(req, buf);
++		respond(req, nil);
++		return;
++	}
++	respond(req, "no.");
++}
++static void
++lcdwrite(Req *r)
++{
++	uchar *p;
++	int n, cur;
++	char buf[64];
++	if (lcd == nil) {
++		respond(r, "no.");
++		return;
++	}
++	p = (uchar*)r->ifcall.data;
++	n = r->ifcall.count;
++	if (n >= sizeof(buf))
++		n = sizeof(buf) - 1;
++	memmove(buf, p, n);
++	buf[n] = 0;
++	cur = lcdcur();
++	if (*buf == '+' && cur != -1) {
++		cur ++;
++	} else if (*buf == '-' && cur != -1) {
++		cur --;
++	} else {
++		cur = atoi(buf);
++	}
++	amleval(lcd, "i", cur, nil);
++	respond(r, nil);
++}
++
+ static void
+ ctlread(Req *r)
+ {
+@@ -379,7 +452,7 @@
+ 			return;
+ 		}
+ 		break;
+-
++	case Qlcd:
+ 	case Qctl:
+ 		if((r->ifcall.mode & ~(OTRUNC|OREAD|OWRITE|ORDWR)) == 0){
+ 			respond(r, nil);
+@@ -539,6 +612,8 @@
+ 	amlenum(amlroot, "_HID", enumec, nil);
+ 	amlenum(amlroot, "_BIF", enumbat, nil);
+ 	amlenum(amlroot, "_PSL", enumtmp, nil);
++	amlenum(amlroot, "_BCM", enumlcd, nil);
++	amlenum(amlroot, "_BQC", enumlcdq, nil);
+ 
+ 	threadpostmountsrv(&fs, srv, mtpt, MREPL);
+ 	threadexits(nil);
