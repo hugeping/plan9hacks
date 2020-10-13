@@ -7005,7 +7005,7 @@ diff -r f7dfc146779d sys/src/9/pc/etherathn.c
 +	/* edev->shutdown = athnshutdown; */
 +	edev->promiscuous = athnpromiscuous;
 +	/* edev->multicast = athnmulticast; */
-+	edev->mbps = 1;
++	edev->mbps = 54;
 +	ctlr->channel = 1;
 +	athn_attach(ctlr);
 +	pcienable(ctlr->pdev);
