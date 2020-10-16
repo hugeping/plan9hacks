@@ -1,0 +1,144 @@
+#!/bin/lua
+local dict = {}
+
+local toupper = {
+	["й"] = "Й",
+	["ц"] = "Ц",
+	["у"] = "У",
+	["к"] = "К",
+	["е"] = "Е",
+	["н"] = "Н",
+	["г"] = "Г",
+	["ш"] = "Ш",
+	["щ"] = "Щ",
+	["з"] = "З",
+	["х"] = "Х",
+	["ъ"] = "Ъ",
+	["ф"] = "Ф",
+	["ы"] = "Ы",
+	["в"] = "В",
+	["а"] = "А",
+	["п"] = "П",
+	["р"] = "Р",
+	["о"] = "О",
+	["л"] = "Л",
+	["д"] = "Д",
+	["ж"] = "Ж",
+	["э"] = "Э",
+	["я"] = "Я",
+	["ч"] = "Ч",
+	["с"] = "С",
+	["м"] = "М",
+	["и"] = "И",
+	["т"] = "Т",
+	["ь"] = "Ь",
+	["б"] = "Б",
+	["ю"] = "Ю",
+	["ё"] = "Ё",
+}
+
+local function lower(str)
+	if type(str) ~= 'string' then
+		return str
+	end
+	str = str:lower()
+	for k, v in pairs(toupper) do
+		str = str:gsub(v, k)
+	end
+	return str
+end
+
+
+function strip(s)
+	if type(s) ~= 'string' and type(s) ~= 'number' then
+		return
+	end
+	s = tostring(s)
+	s = s:gsub("^[ \t]*", ""):gsub("[ \t]*$", "")
+	return s
+end
+
+function split(s, sep_arg)
+	local sep, fields = sep_arg or " ", {}
+	local pattern = string.format("([^%s]+)", sep)
+	if type(s) ~= 'string' and type(s) ~= 'number' then
+		return fields
+	end
+	s = tostring(s)
+	s:gsub(pattern, function(c) fields[#fields+1] = strip(c) end)
+	return fields
+end
+
+local lines = {}
+local words = {}
+
+local args = {...}
+
+if #args == 0 then
+	table.insert(args, '-')
+end
+
+for _, f in ipairs(args) do
+	local h
+	if f == '-' then
+		h = io.stdin
+	else 
+		h = io.open(f, "r")
+	end
+	if not h then
+		error("Can not open file: "..f)
+	end
+	local nr = 1
+	for l in h:lines() do
+		local w = split(l, " :,.!\"\'?|^%]%[%(%)%{%};+")
+		table.insert(lines, { f = f, w = w, nr = nr })
+		for _, v in ipairs(w) do
+			v = v:gsub("ё", "е")
+			words[v] = false
+			words[lower(v)] = false
+		end
+		nr = nr + 1
+	end
+	if h ~= io.stdin then
+		h:close()
+	end
+end
+
+local f = io.open("/sys/lib/ruspell/ru.dict")
+for l in f:lines() do
+	if words[l] == false then
+		words[l] = true
+	end
+end
+f:close()
+
+local err = { list = {} }
+
+for _, l in ipairs(lines) do
+	local added
+	for _, v in ipairs(l.w) do
+		local ow = v
+		v = v:gsub("ё", "е")
+		local lv = lower(v)
+		if not words[v] and not words[lv] and not v:find("^[a-zA-Z0-9_;=+/$#~<>%%@-]*$") then
+			local w = lv
+			if not err[ow] then
+				err[ow] = { w = ow }
+				added = false
+				table.insert(err.list, ow)
+			end
+			if not added then
+				table.insert(err[ow], l)
+				added = true
+			end
+		end
+	end
+end
+
+for _, v in ipairs(err.list) do
+	local t = ''
+	for _, l in ipairs(err[v]) do
+		t = t .. ':'..l.nr .. ' '
+	end
+	print(err[v].w..' '..err[v][1].f .. t)
+end

@@ -1,0 +1,6 @@
+install:V:
+	test -d /sys/lib/ruspell || mkdir /sys/lib/ruspell
+	gunzip ru.dict.gz
+	cp ru.dict /sys/lib/ruspell
+	cp ruspell $home/bin/rc/ruspell
+	chmod +x $home/bin/rc/ruspell
