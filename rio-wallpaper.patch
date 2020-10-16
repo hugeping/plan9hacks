@@ -1,0 +1,15 @@
+diff -r f7dfc146779d sys/src/cmd/rio/data.c
+--- a/sys/src/cmd/rio/data.c	Mon Oct 05 14:10:12 2020 -0700
++++ b/sys/src/cmd/rio/data.c	Fri Oct 16 11:08:05 2020 +0300
+@@ -175,8 +175,10 @@
+ void
+ iconinit(void)
+ {
+-	background = allocimage(display, Rect(0,0,1,1), RGB24, 1, 0x777777FF);
+ 
++	background = readimage(display, 0, 0);
++	if (background == nil)
++		background = allocimage(display, Rect(0,0,1,1), RGB24, 1, 0x777777FF);
+ 	/* greys are multiples of 0x11111100+0xFF, 14* being palest */
+ 	cols[BACK] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xFFFFFFFF^reverse);
+ 	cols[BORD] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x999999FF^reverse);
