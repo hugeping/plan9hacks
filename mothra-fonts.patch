@@ -1,0 +1,36 @@
+diff -r bdd5a746e8c5 sys/src/cmd/mothra/rdhtml.c
+--- a/sys/src/cmd/mothra/rdhtml.c	Sun Oct 18 19:30:14 2020 -0700
++++ b/sys/src/cmd/mothra/rdhtml.c	Wed Oct 21 11:50:54 2020 +0300
+@@ -14,20 +14,20 @@
+ 	int space;
+ }fontlist[4][4]={
+ /* original */
+-	"lucidasans/unicode.7", 0, 0,
+-	"lucidasans/unicode.8", 0, 0,
+-	"lucidasans/unicode.10", 0, 0,
+-	"lucidasans/unicode.13", 0, 0,
++	"dejavusans/unicode.12", 0, 0,
++	"dejavusans/unicode.12", 0, 0,
++	"dejavusans/unicode.14", 0, 0,
++	"dejavusans/unicode.14", 0, 0,
+ 
+-	"lucidasans/italicunicode.7", 0, 0,
+-	"lucidasans/italicunicode.8", 0, 0,
+-	"lucidasans/italicunicode.10", 0, 0,
+-	"lucidasans/italicunicode.13", 0, 0,
++	"dejavusansit/unicode.12", 0, 0,
++	"dejavusansit/unicode.12", 0, 0,
++	"dejavusansit/unicode.14", 0, 0,
++	"dejavusansit/unicode.14", 0, 0,
+ 
+-	"lucidasans/boldunicode.7", 0, 0,
+-	"lucidasans/boldunicode.8", 0, 0,
+-	"lucidasans/boldunicode.10", 0, 0,
+-	"lucidasans/boldunicode.13", 0, 0,
++	"dejavusansbd/unicode.12", 0, 0,
++	"dejavusansbd/unicode.12", 0, 0,
++	"dejavusansbd/unicode.14", 0, 0,
++	"dejavusansbd/unicode.14", 0, 0,
+ 
+ 	"lucidasans/typeunicode.7", 0, 0,
+ 	"pelm/unicode.8", 0, 0,
