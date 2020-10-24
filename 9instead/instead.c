@@ -6,7 +6,7 @@ static int log_opt = 0;
 static int tiny_init(void)
 {
 	int rc;
-	rc = instead_loadfile("tiny.lua");
+	rc = instead_loadfile(STEAD_PATH"tiny.lua");
 	if (rc)
 		return rc;
 	return 0;
