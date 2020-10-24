@@ -5,8 +5,8 @@
 -- fake input
 
 if API == 'stead3' then
-	dofile 'tiny3.lua'
+	require 'tiny3'
 	return
 end
 
-dofile 'tiny2.lua'
+require 'tiny2'

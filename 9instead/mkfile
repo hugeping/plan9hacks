@@ -29,7 +29,9 @@ BIN=/$objtype/bin
 install:V:
 	mkdir -p /sys/games/lib/instead
 	dircp stead /sys/games/lib/instead
-	cp tiny.lua tiny2.lua tiny3.lua /sys/games/lib/instead
+	cp tiny.lua /sys/games/lib/instead
+	cp tiny2.lua /sys/games/lib/instead/stead2
+	cp tiny3.lua /sys/games/lib/instead/stead3
 	cp $O.instead /$objtype/bin/instead
 	cp $O.metaparser /$objtype/bin/metaparser
 
