@@ -1,0 +1,37 @@
+</$objtype/mkfile
+CC=pcc
+CFLAGS=-D_POSIX_SOURCE -DUNIX -DSTEAD_PATH="/sys/games/lib/instead/"
+LIBS=-llua
+
+all: $O.instead $O.metaparser
+	
+
+OFILES=\
+	instead/cache.$O\
+	instead/idf.$O\
+	instead/instead.$O\
+	instead/lfs.$O\
+	instead/list.$O\
+	instead/tinymt32.$O\
+	instead/util.$O
+
+%.$O: %.c
+	$CC $CFLAGS -c -o $target $stem.c
+
+$O.instead: $OFILES instead.$O
+	$CC $CFLAGS -o $target $OFILES instead.$O $LIBS
+
+$O.metaparser: $OFILES metaparser.$O
+	$CC $CFLAGS -o $target $OFILES metaparser.$O $LIBS
+
+BIN=/$objtype/bin
+
+install:V:
+	mkdir -p /sys/games/lib/instead
+	dircp stead /sys/games/lib/instead
+	cp tiny.lua tiny2.lua tiny3.lua /sys/games/lib/instead
+	cp $O.instead /$objtype/bin/instead
+	cp $O.metaparser /$objtype/bin/metaparser
+
+clean:V:
+	rm -f $OFILES $O.instead $O.metaparser *.6
