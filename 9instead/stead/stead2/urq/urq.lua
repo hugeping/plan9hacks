@@ -11,6 +11,7 @@ require ("urq/kbd-win")
 require ("urq/kbd-dos")
 require ("urq/kbd-en")
 require ("urq/kbd-utf8")
+require ("urq/win2utf")
 
 urq = {
 	version = "2.0",
@@ -146,12 +147,17 @@ function lurq(name)
 	if name:find("qs1$") then
 		urq.qs1 = true
 	end
+	local need_conv = (game.codepage == "CP1251" or game.codepage == "cp1251")
+	game.codepage = "UTF-8"
 
 	for line in file:lines() do
 		if urq.qs1 then
 			line = decode_qs1(line);
 		end
 		line = line:gsub("\r","");
+		if need_conv then
+			line = to_utf8(line)
+		end
 		table.insert(urq.quest, line);
 		line = line:gsub("^[ \t]+","");
 		line, incomment = strip_comments(line, incomment);
@@ -172,9 +178,6 @@ function lurq(name)
 		end
 	end
 	file:close();
-	if game.codepage == "cp866" or game.codepage == "CP866" then -- hack for 866 cp
-		urq.examine = 'Осмотреть';
-	end
 end
 
 function label(s)
@@ -1915,4 +1918,4 @@ if stead.version < "1.2.2" then
 else
 	stead.delim='|'
 end
--- game.codepage="CP1251"
+game.codepage="CP1251"
