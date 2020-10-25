@@ -1,0 +1,156 @@
+#!/usr/bin/lua
+-- unmunch hunspell ru dict into ru.dict
+local rex = require "rex_pcre"
+function strip(s)
+	if type(s) ~= 'string' and type(s) ~= 'number' then
+		return
+	end
+	s = tostring(s)
+	s = s:gsub("^[ \t]*", ""):gsub("[ \t]*$", "")
+	return s
+end
+
+function split(s, sep_arg)
+	local sep, fields = sep_arg or " ", {}
+	local pattern = string.format("([^%s]+)", sep)
+	if type(s) ~= 'string' and type(s) ~= 'number' then
+		return fields
+	end
+	s = tostring(s)
+	s:gsub(pattern, function(c) fields[#fields+1] = strip(c) end)
+	return fields
+end
+
+local f = io.open("ru_RU.aff")
+
+AFF = {}
+
+for l in f:lines() do
+	local s = l:find("#", 1, true)
+	if s then
+		l = l:sub(1, s)
+	end
+	local a
+	if l:find("^SFX") or l:find("^PFX") then
+		a = split(l)
+		if #a < 4 or a[3] == 'N' then
+			error(l)
+		end
+		if a[3] ~= 'Y' then
+		local sfx
+		if not AFF[a[2]] then 
+			sfx = { t = a[1], cut = {} }
+		else
+			sfx = AFF[a[2]]
+			if sfx.t ~= a[1] then
+				error(l)
+			end
+		end
+		local cut = sfx.cut
+--		if not sfx.cut[a[3]] then
+--			cut = {}
+--		else
+--			cut = sfx.cut[a[3]]
+--		end
+		local b = split(a[4], '/')
+		local reg
+		if a[5] then
+		if a[1] == 'SFX' then
+			reg = rex.new(a[5]..'$', rex.flags().UTF8 + rex.flags().UCP)
+		else
+			reg = rex.new('^'..a[5], rex.flags().UTF8 + rex.flags().UCP)
+		end
+		end
+		table.insert(cut, {txt=b[1], cut=a[3], aff=b[2], reg=reg, r = a[5]})
+
+		AFF[a[2]] = sfx
+		end
+	end
+end
+f:close()
+
+function affs(s)
+	local r = {}
+	while s:len() >= 2 do
+		local n = s:sub(1,2)
+		table.insert(r, n)
+		s = s:sub(3)
+	end
+	return r
+end
+function expand_all(s, aff)
+	local aa = affs(aff)
+	local pfx = {}
+	local sfx = {}
+
+	for _, v in ipairs(aa) do
+		local p = AFF[v]
+		if p and p.t == 'SFX' then
+			table.insert(sfx, p)
+		elseif p then
+			table.insert(pfx, p)
+		end
+	end
+	for _, v in ipairs(pfx) do
+		expand(s, v)
+	end
+	for _, v in ipairs(sfx) do
+		expand(s, v, pfx)
+	end
+end
+
+function expand(s, a, pfx)
+	local r = {}
+	if a.t == 'SFX' then
+		for _, a in ipairs(a.cut) do
+			local w = s
+			if not a.reg or a.reg:match(s) then
+				if a.cut and a.cut ~= '0' then
+					w = w:gsub(a.cut.."$", "")
+				end
+				if a.txt and a.txt ~= '0' then
+					w = w .. a.txt
+				end
+				print(w)
+				if pfx then
+					for _, v in ipairs(pfx) do
+						expand(w, v)
+					end
+				end
+				if a.aff then
+					expand_all(w, a.aff)
+				end
+			end
+		end
+	else
+		for _, a in ipairs(a.cut) do
+			local w = s
+			if not a.reg or a.reg:match(s) then
+				if a.cut and a.cut ~= '0' then
+					w = w:gsub("^"..a.cut, "")
+				end
+				if a.txt and a.txt ~= '0' then
+					w = a.txt .. w
+				end
+				print(w)
+				if a.aff then
+					expand_all(w, a.aff)
+				end
+			end
+		end
+	end
+end
+
+local f = io.open("ru_RU.dic")
+for l in f:lines() do
+	l=l:gsub("\r", "")
+	local a = split(l, "/")
+	if #a == 1 then
+		print(a[1])
+	else
+		print(a[1])
+		expand_all(a[1], a[2])
+	end
+end
+f:close()
+
