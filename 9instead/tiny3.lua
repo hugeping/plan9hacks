@@ -183,6 +183,7 @@ sound.music = function() end
 sound.stop_music = function() end
 sound.music_fading = function() end
 sound.new = function() return sound end
+sound.music_playing = function() return false end
 
 -- fake timer
 std.obj {
