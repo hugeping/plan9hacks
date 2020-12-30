@@ -141,6 +141,13 @@ end
 stead.set_sound = function(s, chan, loop)
 end
 
+stead.get_picture = function()
+	local s = stead.call(stead.here(), 'pic');
+	if not s then
+		s = stead.call(game, 'pic');
+	end
+	return s;
+end
 -- those are sill in global space
 add_sound = stead.add_sound
 set_sound = stead.set_sound
@@ -192,3 +199,8 @@ stead.objects.input =  function()
 		nam = 'input',
 	};
 end;
+
+game.step = stead.hook(game.step, function(f, ...)
+	plan9_pict()
+	return f(...)
+end)

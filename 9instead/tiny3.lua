@@ -70,6 +70,17 @@ end
 function instead.version(...)
 end
 
+instead.get_picture = function()
+	if get_bool(instead, 'nopic') then
+		return
+	end
+	local s = stead.call(std.here(), 'pic')
+	if not s then
+		s = stead.call(std.ref 'game', 'pic')
+	end
+	return s and std.tostr(s)
+end
+
 function iface:title(str) -- hide title
 	return str
 end
@@ -342,6 +353,7 @@ std.mod_step(function(state)
 	if state then
 		dict = {}
 	end
+	plan9_pict()
 end)
 
 require "ext/paths"
