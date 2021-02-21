@@ -1,7 +1,8 @@
-diff -r f7dfc146779d sys/src/cmd/rio/dat.h
---- a/sys/src/cmd/rio/dat.h	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/cmd/rio/dat.h	Sun Oct 11 13:07:26 2020 +0300
-@@ -345,8 +345,11 @@
+Binary files /sys/src/cmd/rio/7.out and rio/7.out differ
+diff -Nur /sys/src/cmd/rio/dat.h rio/dat.h
+--- /sys/src/cmd/rio/dat.h	Sun Feb 14 20:23:21 2021
++++ rio/dat.h	Thu Feb 18 21:15:02 2021
+@@ -346,8 +346,11 @@
  char		*startdir;
  int		sweeping;
  int		wctlfd;
@@ -13,9 +14,26 @@ diff -r f7dfc146779d sys/src/cmd/rio/dat.h
  int		errorshouldabort;
  int		menuing;		/* menu action is pending; waiting for window to be indicated */
  int		snarfversion;	/* updated each time it is written */
-diff -r f7dfc146779d sys/src/cmd/rio/fsys.c
---- a/sys/src/cmd/rio/fsys.c	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/cmd/rio/fsys.c	Sun Oct 11 13:07:26 2020 +0300
+Binary files /sys/src/cmd/rio/data.7 and rio/data.7 differ
+diff -Nur /sys/src/cmd/rio/data.c rio/data.c
+--- /sys/src/cmd/rio/data.c	Sun Feb 14 20:23:21 2021
++++ rio/data.c	Thu Feb 18 21:15:18 2021
+@@ -175,8 +175,10 @@
+ void
+ iconinit(void)
+ {
+-	background = allocimage(display, Rect(0,0,1,1), RGB24, 1, 0x777777FF);
+ 
++	background = readimage(display, 0, 0);
++	if (background == nil)
++		background = allocimage(display, Rect(0,0,1,1), RGB24, 1, 0x777777FF);
+ 	/* greys are multiples of 0x11111100+0xFF, 14* being palest */
+ 	cols[BACK] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0xFFFFFFFF^reverse);
+ 	cols[BORD] = allocimage(display, Rect(0,0,1,1), CMAP8, 1, 0x999999FF^reverse);
+Binary files /sys/src/cmd/rio/fsys.7 and rio/fsys.7 differ
+diff -Nur /sys/src/cmd/rio/fsys.c rio/fsys.c
+--- /sys/src/cmd/rio/fsys.c	Sun Feb 14 20:23:21 2021
++++ rio/fsys.c	Fri Feb 19 22:32:58 2021
 @@ -50,6 +50,7 @@
  
  char	srvpipe[64];
@@ -34,20 +52,20 @@ diff -r f7dfc146779d sys/src/cmd/rio/fsys.c
  Filsys*
  filsysinit(Channel *cxfidalloc)
  {
-@@ -152,6 +156,12 @@
+@@ -142,6 +146,12 @@
  	post(srvwctl, "wctl", p0);
  	close(p0);
  
 +	if(cexecpipe(&p0, &capsfd) < 0)
 +		goto Rescue;
-+	snprint(srvcaps, sizeof(srvcaps), "/srv/riocaps.%s.%d", fs->user, pid);
++	snprint(srvcaps, sizeof(srvcaps), "/srv/riocaps.%s.%lud", fs->user, (ulong)getpid());
 +	post(srvcaps, "caps", p0);
 +	close(p0);
 +
  	/*
  	 * Start server processes
  	 */
-@@ -160,6 +170,12 @@
+@@ -150,6 +160,12 @@
  		error("wctl channel");
  	proccreate(wctlproc, c, 4096);
  	threadcreate(wctlthread, c, 4096);
@@ -60,10 +78,11 @@ diff -r f7dfc146779d sys/src/cmd/rio/fsys.c
  	proccreate(filsysproc, fs, 10000);
  
  	/*
-@@ -724,3 +740,31 @@
+@@ -713,4 +729,32 @@
+ 	d.atime = clock;
  	d.mtime = clock;
  	return convD2M(&d, buf, nbuf);
- }
++}
 +
 +void
 +capsproc(void *v)
@@ -91,10 +110,11 @@ diff -r f7dfc146779d sys/src/cmd/rio/fsys.c
 +		eofs = 0;
 +	}
 +	close(capsfd);
-+}
-diff -r f7dfc146779d sys/src/cmd/rio/rio.c
---- a/sys/src/cmd/rio/rio.c	Mon Oct 05 14:10:12 2020 -0700
-+++ b/sys/src/cmd/rio/rio.c	Sun Oct 11 13:07:26 2020 +0300
+ }
+Binary files /sys/src/cmd/rio/rio.7 and rio/rio.7 differ
+diff -Nur /sys/src/cmd/rio/rio.c rio/rio.c
+--- /sys/src/cmd/rio/rio.c	Sun Feb 14 20:23:21 2021
++++ rio/rio.c	Thu Feb 18 21:15:02 2021
 @@ -336,6 +336,7 @@
  			write(window[i]->notefd, "hangup", 6); 
  }
@@ -129,3 +149,4 @@ diff -r f7dfc146779d sys/src/cmd/rio/rio.c
  			free(s);
  	}
  }
+
