@@ -73,8 +73,18 @@ local lines = {}
 local words = {}
 
 local args = {...}
+local wid = os.getenv "winid"
 
-if #args == 0 then
+if wid then
+	local f = io.open("/mnt/acme/"..wid.."/rdsel", "r")
+	local t = f and f:read("*all")
+	if f then f:close() end
+	if t == nil or t == '' then
+		table.insert(args, "/mnt/acme/"..wid.."/body")
+	else
+		table.insert(args, "/mnt/acme/"..wid.."/rdsel")
+	end
+elseif #args == 0 then
 	table.insert(args, '-')
 end
 
@@ -91,8 +101,10 @@ for _, f in ipairs(args) do
 	local nr = 1
 	for l in h:lines() do
 		local w = split(l, " :,.!\"\'?|^%]%[%(%)%{%};+")
-		table.insert(lines, { f = f, w = w, nr = nr })
+		table.insert(lines, { f = wid and '-' or f, w = w, nr = nr })
 		for _, v in ipairs(w) do
+			v = v:gsub("^([^/]+)/[^/]+$", "%1")
+			w[_] = v:gsub("/", "")
 			v = v:gsub("ё", "е")
 			words[v] = false
 			words[lower(v)] = false
