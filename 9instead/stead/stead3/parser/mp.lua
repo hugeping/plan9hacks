@@ -194,6 +194,9 @@ end
 
 function input:key(press, key)
 	local mod
+	if mp:noparser() then
+		return false
+	end
 	if key:find("alt") then
 		mp.alt = press
 		mod = true
@@ -234,7 +237,7 @@ mp = std.obj {
 	detailed_inv = false;
 	daemons = std.list {};
 	{
-		version = "1.9";
+		version = "1.11";
 		cache = { tokens = {}, nouns = false };
 		scope = std.list {};
 		logfile = false;
@@ -340,7 +343,14 @@ function mp:key(key)
 		self:autoscript()
 		return true
 	end
-
+	if key == 'home' or key == '[7]' then
+		self.cur = 1
+		return true
+	end
+	if key == 'end' or key == '[1]' then
+		self.cur = self.inp:len() + 1
+		return true
+	end
 	if key == 'left' then
 		return self:inp_left()
 	end
@@ -1647,12 +1657,12 @@ function mp:match(verb, w, compl)
 
 	for k, v in ipairs(matches) do
 		v.nr = k
---[[
+if false then
 		print("-----------", k)
 		for kk, vv in ipairs(v) do
 			print(vv)
 		end
-]]--
+end
 	end
 
 	table.sort(matches,

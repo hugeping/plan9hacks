@@ -28,7 +28,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <time.h>
-#include <math.h>
+// #include <math.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 	4096

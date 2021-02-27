@@ -283,7 +283,7 @@ mp.msg.Take.HAVE = "У {#me/вн} и так {#firstit} уже есть."
 mp.msg.Take.TAKE = "{#Me} {#verb/take} {#first/вн}."
 mp.msg.Take.SELF = "{#Me} есть у {#me/рд}."
 --"находиться"
-mp.msg.Take.WHERE = "Нельзя взять то, в/на чём {#me} {#word/находиться,#me}."
+mp.msg.Take.WHERE = "Нельзя взять то, {#if_hint/#where,supporter,на,в} чём {#me} {#word/находиться,#me}."
 
 mp.msg.Take.LIFE = "{#First/дт} это вряд ли понравится."
 --"закреплён"
@@ -686,7 +686,7 @@ Verb { "#Unlock",
 }
 
 Verb { "#Close",
-	"закр/ыть",
+	"закры/ть,закро/й",
 	"{noun}/вн : Close",
 	"{noun}/вн {noun}/тв,held : Lock",
 	"~ {noun}/вн на {noun}/вн,held : Lock",
@@ -720,9 +720,17 @@ Verb { "#Take",
 	"~ из|с|со|у {noun}/рд,inside,holder {noun}/вн,scene: Remove reverse",
 }
 
+Verb { "#Insert",
+	"воткн/уть,втык/ать,вставить,влож/ить",
+	"[|про|за]сун/уть,вставь/",
+	"{noun}/вн,held в|во {noun}/вн,inside : Insert",
+	"~ {noun}/вн,held внутрь {noun}/рд : Insert",
+	"~ в|во {noun}/вн {noun}/вн : Insert reverse",
+	"~ внутрь {noun}/рд {noun}/вн : Insert reverse",
+}
+
 Verb { "#Drop",
-	"полож/ить,постав/ить,посади/ть,класть,клади/,помест/ить,"..
-	"[|про|за]сун/уть,воткн/уть,втык/ать,вставить,вставь/,влож/ить",
+	"полож/ить,постав/ить,посади/ть,класть,клади/,помест/ить",
 	"{noun}/вн,held : Drop",
 	"{noun}/вн,held в|во {noun}/вн,inside : Insert",
 	"~ {noun}/вн,held внутрь {noun}/рд : Insert",
@@ -816,7 +824,7 @@ Verb {
 
 Verb {
 	"#Turn",
-	"враща/ть,поверн/уть,верт/еть,поверт/еть,крути/ть",
+	"враща/ть,поверн/уть,[|за|по]верт/еть,[|за]крути/ть",
 	"{noun}/вн : Turn"
 }
 
