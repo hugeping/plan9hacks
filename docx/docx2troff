@@ -1,0 +1,45 @@
+#!/bin/rc
+
+rfork en
+tmpfile=/tmp/docx.$pid
+tmpmnt=/n/docx.$pid
+
+fn sigexit {
+	rm -f $tmpfile
+	unmount $tmpmnt
+}
+
+flagfmt='d'
+args='[file.docx]'
+
+if(! ifs=() eval `{aux/getflags $*} || ! ~ $#* 0 1){
+	aux/usage
+	exit usage
+}
+
+switch($#*){
+case 0
+	cat >$tmpfile
+	file=$tmpfile
+	src=stdin
+case 1
+	file=$1
+	src=$1
+}
+
+if(! ~ `{file -m $file} application/zip){
+	echo docx2roff: $src not a zip file >[1=2]
+	exit 'not zip'
+}
+
+fs/zipfs -m $tmpmnt $file || { 
+	echo 'docx2roff: ' $file ' mount failed - corrupt zip?' >[1=2]
+	exit 'mount fail'
+}
+
+if(! test -f $tmpmnt/word/document.xml) {
+	echo 'docx2roff: .../word/document.xml not found - not a Word document?' >[1=2]
+	exit 'not word'
+}
+
+word2troff $tmpmnt 

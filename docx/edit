@@ -1,0 +1,14 @@
+#fns=`{sed -n 's:^.*	((xml)[a-z]+)\(.*\);:\1:p' < /sys/include/xml.h}
+#re=`{echo  '(' ^ $"fns ^ ')' | sed 's/ /|/g'}
+
+# from Xfns → xmlfns
+fns=`{sed -n 's:^.*	(xml([a-z]+))\(.*\);:\2:p' < /sys/include/xml.h}
+fns = ($fns debug)
+re=`{echo  'X(' ^ $"fns ^ ')' | sed 's/ /|/g'}
+echo 'Edit X:/sys/src/cmd/opc/.*\.c: ,s:' ^ $re ^ ':xml\1:g' 
+
+# from xmlfns → Xfns
+fns=`{sed -n 's:^.*	(X([a-z]+))\(.*\);:\2:p' < /sys/include/xml.h}
+fns = ($fns debug)
+re=`{echo  'xml(' ^ $"fns ^ ')' | sed 's/ /|/g'}
+echo 'Edit X:/sys/src/cmd/opc/.*\.c: ,s:' ^ $re ^ ':X\1:g' 

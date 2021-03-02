@@ -1,0 +1,8 @@
+</$objtype/mkfile
+
+TARG=excel2txt
+OFILES=excel2txt.$O strings.$O styles.$O fmtnum.$O
+BIN=/$objtype/bin/opc
+CLEANFILES=junk.xlsx
+
+</sys/src/cmd/mkone

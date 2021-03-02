@@ -1,0 +1,21 @@
+</$objtype/mkfile
+
+TARG=word2troff word2txt
+BIN=/$objtype/bin/opc
+
+</sys/src/cmd/mkmany
+
+%.pdf:	$O.word2troff examples/%.docx
+	unzip -c -s word/document.xml < examples/$stem.docx  | $O.word2troff | tbl | troff -ms | lp -d stdout | ps2pdf > $target 
+
+%.txt:	$O.word2txt examples/%.docx
+	unzip -c -s word/document.xml < examples/$stem.docx  | $O.word2txt | fmt > $target 
+
+nuke:
+	rm -f *.txt *.pdf
+
+test:V:\
+	Document-compatibility-check.pdf\
+	OpenXML_text_reference_v1_2.pdf\
+	Document-compatibility-check.txt\
+	OpenXML_text_reference_v1_2.txt

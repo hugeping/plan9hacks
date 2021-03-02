@@ -1,0 +1,27 @@
+print warning if document layout is landscape
+
+set page size from xml
+
+Numbered headdings -v- Bullets
+
+Comments should be flagged as such somehow (square brackets ?).
+
+headers and footers are a pain.
+word allows you to specify them with things like indents and paragraph styles,
+the fields may be laid out in left, center and right just like troff but in the wrong
+order - and there is no requirment that they do this. also they have some auto fields,
+page number (which we have) but number of pages (which we don't), printed date (which we have)
+but filename and document version which we don't. all a can of worms and not worth the
+effort IMHO.
+
+numbered lists are a pain too
+word keeps multiple parallel numbered lists and can swap and change between them with inpunity.
+we can detect whether its a numbered or bulleted list easily enough but we would have to do
+the paragraph numbering ourselves rather than relying on .NH as we would need to be able to
+reset the numbering (easy, .NH 0) but also preset (not possible).
+
+----------------------
+BUGS:
+
+Some Snell docs are not getting underlined titles on teh first page - why?
+
