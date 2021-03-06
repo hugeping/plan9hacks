@@ -1,0 +1,57 @@
+--- /mnt/git/object/6a24e215725d72e1c24d880809f5ea3454d7a6f8/tree/castor.c
++++ castor.c
+@@ -240,10 +240,10 @@
+ void
+ rendertext(Ctx *c, char *line)
+ {
+-	char *base, *right_margin;
++	char *base, *right_margin, *prev;
+     int length, width;
+ 
+-    length = strlen(strdup(line));
++    length = utflen(strdup(line));
+     base = strdup(line);
+     width = 80;
+ 
+@@ -257,7 +257,7 @@
+ 		return;
+ 	}
+ 
+-	while(*base){
++	while(*base && length >0){
+ 		/* Preformatted text */
+ 		if(preformatted==1){
+ 			plrtstr(&c->text, 1000000, 8, 0, font, strdup(cleanup(base)), PL_HEAD, 0);
+@@ -274,21 +274,20 @@
+         }
+ 		
+ 		/* Wrapping the rest */
+-		right_margin = base + width;
+-		while(!isspace(*right_margin)){
+-			right_margin--;
+-			if(right_margin == base){
+-				right_margin += width;
+-				while(!isspace(*right_margin)){
+-					if(*right_margin == '\0')
+-						break;
+-					right_margin++;
+-				}
+-			}
++		prev = right_margin = base;
++		while (utflen(right_margin) > length - width && *right_margin) {
++			prev = right_margin;
++			right_margin += strcspn(right_margin, " \t");
++			right_margin += strspn(right_margin, " \t");
+ 		}
++		if (utflen(right_margin) > length - width)
++			right_margin = prev;
++		else if (*right_margin)
++			right_margin --;
++
+ 		*right_margin = '\0';
++		length -= utflen(base) + 1;
+ 		plrtstr(&c->text, 1000000, 8, 0, font, strdup(cleanup(base)), 0, 0);
+-		length -= right_margin - base + 1; /* +1 for the space */
+ 		base = right_margin + 1;
+ 	}
+ }
