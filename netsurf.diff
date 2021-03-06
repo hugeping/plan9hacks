@@ -1,0 +1,161 @@
+--- /mnt/git/object/a70867320fb2f670e6717c8000f2bbf16f667dce/tree/desktop/textarea.c
++++ desktop/textarea.c
+@@ -1355,7 +1355,7 @@
+ 	/* Update lengths, and normalise */
+ 	ta->text.len += b_len;
+ 	ta->text.utf8_len += utf8_bounded_length(text, b_len);
+-	textarea_normalise_text(ta, b_off, b_len);
++	//textarea_normalise_text(ta, b_off, b_len);
+ 
+ 	/* Get byte delta */
+ 	if (ta->flags & TEXTAREA_PASSWORD) {
+--- /mnt/git/object/a70867320fb2f670e6717c8000f2bbf16f667dce/tree/frontends/plan9/drawui/entry.c
++++ frontends/plan9/drawui/entry.c
+@@ -124,10 +124,11 @@
+ 	if (entry->pos != entry->pos2) {
+ 		sels = min(entry->pos, entry->pos2);
+ 		sele = max(entry->pos, entry->pos2);
+-		p.x += stringnwidth(font, entry->text, sels);
+-		stringnbg(screen, p, fg_color, ZP, font, entry->text+sels, sele-sels, sel_color, ZP);
++		p.x += stringnwidth(font, entry->text, utfnlen(entry->text, sels));
++		stringnbg(screen, p, fg_color, ZP, font, entry->text+sels, 
++			utfnlen(entry->text + sels, sele-sels), sel_color, ZP);
+ 	} else if (entry->state & STATE_FOCUSED) {
+-		entry->tick_x = stringnwidth(font, entry->text, entry->pos);
++		entry->tick_x = stringnwidth(font, entry->text, utfnlen(entry->text, entry->pos));
+ 		p.x += entry->tick_x;
+ 		r = Rect(p.x, p.y, p.x + Dx(tick->r), p.y + Dy(tick->r));
+ 		draw(screen, r, tick, nil, ZP);
+@@ -140,10 +141,10 @@
+ 
+ 	x = m.xy.x - entry->r.min.x - PADDING;
+ 	prev = 0;
+-	for (i = 0; i < entry->len; i++) {
+-		cur = stringnwidth(font, entry->text, i);
++	for (i = 0; i < entry->len; i = utf8_next(entry->text, entry->len, i)) {
++		cur = stringnwidth(font, entry->text, utfnlen(entry->text, i));
+ 		if ((prev+cur)/2 >= x) {
+-			i--;
++			i = utf8_prev(entry->text, i);
+ 			break;
+ 		} else if (prev <= x && cur >= x) {
+ 			break;
+@@ -282,10 +283,11 @@
+ 		entry->text[entry->len] = 0;
+ 		break;
+ 	case Kleft:
+-		entry->pos = max(0, sels-1);
++		entry->pos = max(0, utf8_prev(entry->text, sels));
+ 		break;
+ 	case Kright:
+-		entry->pos = min(entry->len, sele+1);
++		if (sele < entry->len)
++			entry->pos = utf8_next(entry->text, entry->len, sele);
+ 		break;
+ 	case Ksoh:	/* ^A: start of line */
+ 	case Khome:
+@@ -371,6 +373,8 @@
+ 	sele = max(entry->pos, entry->pos2);
+ 	if(sels == sele && sels == 0)
+ 		return;
++	if (bs)
++		bs = sels - utf8_prev(entry->text, sels);
+ 	memmove(entry->text + sels - bs, entry->text + sele, entry->len - sele);
+ 	entry->pos = sels - bs;
+ 	entry->len -= sele - sels + bs;
+--- /mnt/git/object/a70867320fb2f670e6717c8000f2bbf16f667dce/tree/frontends/plan9/layout.c
++++ frontends/plan9/layout.c
+@@ -13,25 +13,25 @@
+ 	char *name;
+ 	Font *font;
+ } fontlist[4][4] = {
+-	"lucidasans/unicode.7", 0,
+-	"lucidasans/unicode.8", 0,
+-	"lucidasans/unicode.10", 0,
+-	"lucidasans/unicode.13", 0,
++	"Go-Regular/Go-Regular.14", 0,
++	"Go-Regular/Go-Regular.16", 0,
++	"Go-Regular/Go-Regular.18", 0,
++	"Go-Regular/Go-Regular.20", 0,
++	
++	"Go-Italic/Go-Italic.14", 0,
++	"Go-Italic/Go-Italic.16", 0,
++	"Go-Italic/Go-Italic.18", 0,
++	"Go-Italic/Go-Italic.20", 0,
++	
++	"Go-Bold/Go-Bold.14", 0,
++	"Go-Bold/Go-Bold.16", 0,
++	"Go-Bold/Go-Bold.18", 0,
++	"Go-Bold/Go-Bold.20", 0,
+ 
+-	"lucidasans/italicunicode.7", 0,
+-	"lucidasans/italicunicode.8", 0,
+-	"lucidasans/italicunicode.10", 0,
+-	"lucidasans/italicunicode.13", 0,
+-
+-	"lucidasans/boldunicode.7", 0,
+-	"lucidasans/boldunicode.8", 0,
+-	"lucidasans/boldunicode.10", 0,
+-	"lucidasans/boldunicode.13", 0,
+-
+-	"lucidasans/typeunicode.7", 0,
+-	"pelm/unicode.8", 0,
+-	"lucidasans/typeunicode.12", 0,
+-	"lucidasans/typeunicode.16", 0,
++	"Go-Mono/Go-Mono.14", 0,	
++	"Go-Mono/Go-Mono.16", 0,
++	"Go-Mono/Go-Mono.18", 0,
++	"Go-Mono/Go-Mono.20", 0,
+ };
+ 
+ enum
+@@ -136,26 +136,32 @@
+         uint32_t ucs4;
+         size_t nxtchr = 0;
+         int prev_x = 0;
+-
++	if (length == 0 || x < 1) {
++		*char_offset = 0;
++		*actual_x = 0;
++		return NSERROR_OK;
++	}
+ 	f = getfont(fstyle);
+-        *actual_x = 0;
+-        while (nxtchr < length) {
+-                ucs4 = utf8_to_ucs4(s + nxtchr, length - nxtchr);
+-
+-                *actual_x += runestringnwidth(f, &ucs4, 1);
+-                if (*actual_x > x)
+-                        break;
+-
+-                prev_x = *actual_x;
+-                nxtchr = utf8_next(s, length, nxtchr);
++	*actual_x = 0;
++    while (nxtchr < length) {
++    	ucs4 = utf8_to_ucs4(s + nxtchr, length - nxtchr);
++    	prev_x = *actual_x;
++    	*actual_x += runestringnwidth(f, &ucs4, 1);
++    	if (x >= prev_x && x < *actual_x) {
++    		*actual_x = prev_x + 1;
++    		*char_offset = nxtchr;
++            return NSERROR_OK;
+         }
+-
++		nxtchr = utf8_next(s, length, nxtchr);
++	}
++	*char_offset = length;
++	
+         /* choose nearest of previous and last x */
+-        if (abs(*actual_x - x) > abs(prev_x - x))
+-                *actual_x = prev_x;
+-
+-        *char_offset = nxtchr;
+-	return NSERROR_OK;}
++ //       if (abs(*actual_x - x) > abs(prev_x - x))
++ //               *actual_x = prev_x;
++ //       *char_offset = nxtchr;
++	return NSERROR_UNKNOWN;//OK;
++}
+ 
+ 
+ /**
