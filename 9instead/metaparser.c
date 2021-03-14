@@ -68,6 +68,8 @@ int main(int argc, const char **argv)
 		if (rc && !str)
 			str = instead_cmd(p, NULL);
 		if (str) {
+			char *eptr = str + strlen(str);
+			while ((*eptr == '\n' || *eptr == 0) && eptr != str) *eptr-- = 0;
 			printf("%s\n", str); fflush(stdout);
 		}
 		free(str);
