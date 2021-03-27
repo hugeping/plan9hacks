@@ -1,15 +1,4 @@
---- /mnt/git/object/a70867320fb2f670e6717c8000f2bbf16f667dce/tree/desktop/textarea.c
-+++ desktop/textarea.c
-@@ -1355,7 +1355,7 @@
- 	/* Update lengths, and normalise */
- 	ta->text.len += b_len;
- 	ta->text.utf8_len += utf8_bounded_length(text, b_len);
--	textarea_normalise_text(ta, b_off, b_len);
-+	//textarea_normalise_text(ta, b_off, b_len);
- 
- 	/* Get byte delta */
- 	if (ta->flags & TEXTAREA_PASSWORD) {
---- /mnt/git/object/a70867320fb2f670e6717c8000f2bbf16f667dce/tree/frontends/plan9/drawui/entry.c
+--- /mnt/git/object/c6e8947629338beb12f1875540d4bf17900fb5cf/tree/frontends/plan9/drawui/entry.c
 +++ frontends/plan9/drawui/entry.c
 @@ -124,10 +124,11 @@
  	if (entry->pos != entry->pos2) {
@@ -63,7 +52,7 @@
  	memmove(entry->text + sels - bs, entry->text + sele, entry->len - sele);
  	entry->pos = sels - bs;
  	entry->len -= sele - sels + bs;
---- /mnt/git/object/a70867320fb2f670e6717c8000f2bbf16f667dce/tree/frontends/plan9/layout.c
+--- /mnt/git/object/c6e8947629338beb12f1875540d4bf17900fb5cf/tree/frontends/plan9/layout.c
 +++ frontends/plan9/layout.c
 @@ -13,25 +13,25 @@
  	char *name;
