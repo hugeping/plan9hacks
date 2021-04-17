@@ -1456,14 +1456,13 @@ function mp:match(verb, w, compl)
 	local hints = {}
 	local unknown = {}
 	local multi = {}
-	local vargs
 	local parsed_verb = {}
 	local fixed_verb = verb.verb[verb.word_nr]
 	fixed_verb = fixed_verb.word .. (fixed_verb.morph or '')
 	table.insert(parsed_verb, fixed_verb)
 	for _, d in ipairs(verb.dsc) do -- verb variants
 --		local was_noun = false
-		local match = { args = {}, vargs = {}, ev = d.ev, wildcards = 0, verb = parsed_verb, defaults = 0 }
+		local match = { args = {}, vargs = {}, skip = 0, ev = d.ev, wildcards = 0, verb = parsed_verb, defaults = 0 }
 		local a = {}
 		found = (#d.pat == 0)
 		for k, v in ipairs(w) do
@@ -1476,6 +1475,7 @@ function mp:match(verb, w, compl)
 		local rlev = 1
 		local need_required = false
 		local default = false
+		local vargs
 		for lev, v in ipairs(d.pat) do -- pattern arguments
 			if v == '*' or v == '~*' then
 				vargs = true -- found
@@ -1496,9 +1496,9 @@ function mp:match(verb, w, compl)
 					need_required = true
 					all_optional = false
 				end
-				if pp.default then
+				default = pp.default
+				if default then
 					word = pp.word
-					default = true
 				end
 				local new_wildcard
 				local k, len = word_search(a, pp.word)
@@ -1508,6 +1508,7 @@ function mp:match(verb, w, compl)
 				else
 					new_wildcard = false
 				end
+				if not required and k ~= 1 then k = false end -- ?word is only in 1st pos
 				if k and ((k < best or len > best_len) or
 					(not new_wildcard and wildcard and k <= best and len >= best_len)) then
 					wildcard = new_wildcard
@@ -1564,10 +1565,15 @@ function mp:match(verb, w, compl)
 					rlev = rlev + 1
 					vargs = false
 				end
+				if (wildcard or match.wildcards > 0) and best > 1 then -- do not skip words if wildcard used
+					found = false
+					break
+				end
 --				if false then
 --					a = tab_exclude(a, best, best + best_len - 1)
 --				else
 --				if not was_noun then
+					match.skip = match.skip + (best - 1)
 					for i = 1, best - 1 do
 						table.insert(skip, a[i])
 					end
@@ -1668,6 +1674,12 @@ end
 	table.sort(matches,
 		function(a, b)
 			local na, nb = #a - a.defaults, #b - b.defaults
+			if not a.extra and a.skip == 0 then
+				na = na + 100
+			end
+			if not b.extra and b.skip == 0 then
+				nb = nb + 100
+			end
 			if na == nb and a.wildcards == b.wildcards then
 				return a.nr < b.nr
 			end
@@ -2818,5 +2830,12 @@ function std.obj:has(attr)
 end
 
 function iface:title(t)
-	return(iface:bold( mrd.lang.cap(t)))
+	return(iface:bold(mrd.lang.cap(t)))
+end
+
+std.getmt("").__pow = function(a, b)
+	if b and std.is_obj(b) then
+		return b ^ a
+	end
+	return false
 end
