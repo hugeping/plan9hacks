@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "instead/instead.h"
+#define WIDTH 70
+
 static int log_opt = 0;
 static int tiny_init(void)
 {
@@ -15,19 +17,78 @@ static struct instead_ext ext = {
 	.init = tiny_init,
 };
 
+#define utf_cont(p) ((*(p) & 0xc0) == 0x80)
+
+static int utf_ff(const char *s, const char *e)
+{
+	int l = 0;
+	if (!s || !e)
+		return 0;
+	if (s > e)
+		return 0;
+	if ((*s & 0x80) == 0) /* ascii */
+		return 1;
+	l = 1;
+	while (s < e && utf_cont(s + 1)) {
+		s ++;
+		l ++;
+	}
+	return l;
+}
+
+static void fmt(const char *str, int width)
+{
+	int l;
+	const char *ptr = str;
+	const char *eptr = ptr + strlen(str);
+	const char *s = str;
+	const char *last = NULL;
+	char c;
+	int w = 0;
+	while (l = utf_ff(ptr, eptr)) {
+		c = *ptr;
+		ptr += l;
+		w ++;
+		if (c == ' ' || c == '\t' || c == '\n')
+			last = ptr;
+		if ((width > 0 && w > width) || c == '\n') {
+			while(s != last)
+				putc(*s++, stdout);
+			if (c != '\n')
+				putc('\n', stdout);
+			w = 0;
+			last = s;
+			continue;
+		}
+	}
+	while(s != eptr)
+		putc(*s++, stdout);
+	putc('\n', stdout);
+}
+
 int main(int argc, const char **argv)
 {
 	int rc; char *str; const char *game = NULL;
-	if (argc != 2) {
-		fprintf(stderr, "Usage: %s <game>\n", argv[0]);
+	int opt_debug = 0;
+	int opt_width = WIDTH;
+	int i = 0;
+	for (i = 1; i < argc; i++) {
+		if (!strcmp(argv[i], "-d"))
+			opt_debug = 1;
+		else if (!strncmp(argv[i], "-w", 2))
+			opt_width = atoi(argv[i] + 2);
+		else if (!game)
+			game = argv[i];
+	}
+	if (!game) {
+		fprintf(stderr, "Usage: %s [-d] [-w<width>] <game>\n", argv[0]);
 		exit(1);
 	}
-	game = argv[1];
 	if (instead_extension(&ext)) {
 		fprintf(stderr, "Can't register tiny extension\n");
 		exit(1);
 	}
-	instead_set_debug(1);
+	instead_set_debug(opt_debug);
 
 	if (instead_init(game)) {
 		fprintf(stderr, "Can not init game: %s\n", game);
@@ -43,7 +104,7 @@ int main(int argc, const char **argv)
 	str = instead_cmd("look", &rc);
 #endif
 	if (!rc) {
-		printf("%s\n", str); fflush(stdout);
+		fmt(str, opt_width); fflush(stdout);
 	}
 	free(str);
 
@@ -70,7 +131,7 @@ int main(int argc, const char **argv)
 		if (str) {
 			char *eptr = str + strlen(str);
 			while ((*eptr == '\n' || *eptr == 0) && eptr != str) *eptr-- = 0;
-			printf("%s\n", str); fflush(stdout);
+			fmt(str, opt_width); fflush(stdout);
 		}
 		free(str);
 		if (log_opt) fprintf(stderr, "%s\n", p);
