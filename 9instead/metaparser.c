@@ -51,7 +51,7 @@ static void fmt(const char *str, int width)
 		w ++;
 		if (c == ' ' || c == '\t' || c == '\n')
 			last = ptr;
-		if ((width > 0 && w > width) || c == '\n') {
+		if ((width > 0 && w > width && last) || c == '\n') {
 			while(s != last)
 				putc(*s++, stdout);
 			if (c != '\n')
