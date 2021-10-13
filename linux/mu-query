@@ -1,0 +1,524 @@
+#!/usr/bin/env lua
+local field_file = 1
+local field_date = 2
+local field_from = 3
+local field_subj = 4
+local START=1
+local PERPAGE=100
+local VIEW="mu find -s d --reverse --nocolor -f 'l|d|f|s' %q | /usr/bin/tail -n +%d | head -n "..tostring(PERPAGE)
+local MSGVIEW="mu view --nocolor %q"
+local QUERY=""
+local EXTRACTDIR="/tmp/mu-query/"
+local SENDMAIL="msmtp --read-envelope-from %q"
+local TEMPLATE="To: \nFrom: nobody@fqdn.com\nSubject: \n"
+local HEADERS="Content-Type: text/plain; charset=UTF-8\n\n"
+local a = {...}
+local PROGNAME = arg[0]
+local MSG
+local COMPOSE
+local REPLY
+
+local NAMESPACE
+
+for _, v in ipairs(a) do
+	if v == '--message' then
+		MSG=true
+	elseif MSG == true then
+		MSG = v
+	elseif v == '--compose' then
+		COMPOSE=true
+	elseif COMPOSE then
+		REPLY = v
+	else
+		if QUERY ~= "" then
+			QUERY=QUERY.." "
+		end
+		QUERY=QUERY..v
+	end
+end
+
+function msg_number(s)
+	if not s then return end
+	if tonumber(s) then
+		return tonumber(s) - START + 1
+	end
+	if not s:find("/$") then
+		return
+	end
+	s = s:gsub("/$", "")
+	return tonumber(s) - START + 1
+end
+
+function strip(str)
+	if not str then return str end
+	str = str:gsub("^[ \t]+",""):gsub("[ \t]+$","")
+	return str
+end
+
+function split(s, sep_arg)
+	local sep, fields = sep_arg or " ", {}
+	local pattern = string.format("([^%s]+)", sep)
+	s:gsub(pattern, function(c) table.insert(fields, strip(c)) end)
+	return fields
+end
+
+function splitn(self, nMax, sSeparator, bPlain)
+	if type(self) ~= 'string' and type(self) ~= 'number' then
+		return {}
+	end
+	sSeparator = sSeparator or "[ \t]+"
+	local aRecord = {}
+	if self:len() > 0 then
+		nMax = nMax or -1
+		local nField, nStart = 1, 1
+		local nFirst,nLast = self:find(sSeparator, nStart, bPlain)
+		while nFirst and nMax ~= 0 do
+			aRecord[nField] = self:sub(nStart, nFirst - 1)
+			nField = nField + 1
+			nStart = nLast + 1
+			nFirst,nLast = self:find(sSeparator, nStart, bPlain)
+			nMax = nMax - 1
+		end
+		aRecord[nField] = self:sub(nStart)
+	end
+	return aRecord
+end
+
+
+function new()
+	local f, e = io.open(string.format("%s/%s/%s", NAMESPACE or '/dev/null/', id, file), "r") or
+		io.popen("9p read acme/new/ctl", "r")
+	if not f then
+		return false, e
+	end
+	local l = f:read("*all")
+	f:close()
+	l = split(l)
+	return l[1]
+end
+
+function read(id, file, fn)
+	local l = true
+	local f, e = io.open(string.format("%s/%s/%s", NAMESPACE or '/dev/null/', id, file), "r") or
+		io.popen(string.format("9p read acme/%s/%s", id, file), "r")
+	if not f then
+		return false, e
+	end
+	if type(fn) == 'function' then
+		for l in f:lines() do
+			if fn(l) then
+				break
+			end
+		end
+	else
+		l = f:read("*all")
+	end
+	f:close()
+	return l
+end
+
+function mount_namespace()
+	if NAMESPACE ~= nil then
+		return NAMESPACE
+	end
+	local ns = io.popen("namespace", "r")
+	if ns then
+		NAMESPACE = ns:read("*line")
+		ns:close()
+	else
+		NAMESPACE = false
+	end
+	if NAMESPACE then
+		if not exists(NAMESPACE..'/acme9p/index') then
+			os.execute(string.format("mkdir -p %q && 9pfuse %q %q",
+				NAMESPACE .. '/acme9p/',
+				NAMESPACE .. '/acme',
+				NAMESPACE .. '/acme9p'));
+		end
+		if exists(NAMESPACE..'/acme9p/index') then
+			NAMESPACE = NAMESPACE .. '/acme9p/'
+		else
+			NAMESPACE = false
+		end
+	end
+	return NAMESPACE
+end
+
+function unmount_namespace()
+	if not NAMESPACE then
+		return
+	end
+	os.execute(string.format("fusermount -u %q", NAMESPACE))
+	NAMESPACE=nil
+end
+
+function write(id, file, str)
+	local f, e = io.open(string.format("%s/%s/%s", NAMESPACE or '/dev/null/', id, file), "a") or
+		io.popen(string.format("9p write acme/%s/%s", id, file), "w")
+	if not f then
+		return false
+	end
+	if type(str) == 'function' then
+		while true do
+			local l = str()
+			if not l then
+				break
+			end
+			f:write(l..'\n')
+		end
+	else
+		f:write(str)
+	end
+	f:close()
+	return true
+end
+
+function toline(id, nr)
+	return write(id, 'addr', tostring(nr))
+		and write(id, 'ctl', 'dot=addr')
+		and write(id, 'ctl', 'show')
+end
+
+function getline(id)
+	write(id, 'ctl', 'addr=dot')
+	return read(id, 'addr')
+end
+
+function clean(id)
+	return write(id, 'ctl', 'clean')
+end
+
+function get()
+	local t = {}
+	os.execute("mu index -q")
+	local f, e = io.popen(string.format(VIEW, QUERY, START), "r")
+	if not f then
+		return f, e
+	end
+	for l in f:lines() do
+		l = split(l, "|")
+		local flags = l[1]
+		if flags:find(":2,", 1, true) then
+			flags = flags:gsub("^.*:2,([PRSTDF]*)$", "%1")
+		else
+			flags = ''
+		end
+		table.insert(t, {
+			file = l[field_file],
+			date = l[field_date],
+			from = l[field_from],
+			subj = l[field_subj],
+			flags = flags })
+	end
+	f:close()
+	return t
+end
+
+function show(id, t)
+	mount_namespace()
+	write(id, 'addr', "0,$")
+	for k, v in ipairs(t) do
+		local date = split(v.date," ") 
+		date = date[2] .. ' '..date[3]
+		write(id, 'data', string.format("%3d/ %+3s %s %s %s\n",k + START -1, v.flags, date, v.from, v.subj or ''))
+	end
+	clean(id)
+	unmount_namespace()
+	return true
+end
+
+function showmsg(id, fname)
+	local f = io.popen(string.format(MSGVIEW, fname), "r")
+	if not f then
+		return false
+	end
+	write(id, 'data', function()
+		return f:read("*line")
+	end)
+	f:close()
+	os.execute(string.format("rm %q/* 2>/dev/null", EXTRACTDIR))
+	os.execute(string.format("mkdir %q 2>/dev/null", EXTRACTDIR))
+	os.execute(string.format("mu extract --save-all --nocolor --target-dir=%q %q", EXTRACTDIR, fname))
+	f = io.popen(string.format("find %q -type f", EXTRACTDIR), "r")
+	mount_namespace()
+	write(id, 'data', '\nFiles:\n')
+	if f then
+		write(id, 'data', function()
+			return f:read("*line")
+		end)
+		f:close()
+	end
+	toline(id, 0)
+	clean(id)
+	unmount_namespace()
+	return true
+end
+
+function events(id, fn)
+	local f, e = io.open(string.format("%s/%s/event", NAMESPACE or '/dev/null/', id), "r") or
+		io.popen(string.format("9p read acme/%s/event 2>/dev/null", id), "r")
+	if not f then
+		return f, e
+	end
+	while true do
+		l = f:read("*line")
+		if not l then break end
+		l = split(l)
+		if not fn(table.unpack(l)) then
+			if defhandler(l[3]) then
+				write(id, 'event', string.format("%s %s\n", l[1], l[2]))
+			end
+		end
+	end
+	f:close()
+	return true
+end
+
+function mark_read(fname)
+	if not fname:find("/new/") then
+		return fname
+	end
+	local fname2 = fname:gsub("/new/", "/cur/")
+	if fname:find(":2,$") then
+		fname2 = fname2:gsub(":2,$", "")
+	end
+	if fname2:find(":2,") then
+		return fname
+	end
+	fname2 = fname2 .. ":2,S"
+	os.rename(fname, fname2)
+	return fname2
+end
+
+function mark_reply(fname)
+	if not fname:find("/cur/") then
+		return fname
+	end
+	local fl = split(fname, ':')
+	if not fl[2] or not fl[2]:find("^2,") then
+		return fname
+	end
+	local flags = fl[2]:sub(3)
+	if flags:find("R") then
+		return fname
+	end
+	fname2 = fl[1] .. ":2,R"..flags
+	os.rename(fname, fname2)
+	return fname2
+end
+
+function exists(name)
+	local f = io.open(name, "r")
+	if not f then return false end
+	f:close()
+	return true
+end
+
+function startswith(str, pfx)
+	return str and str:find(pfx, 1, true) == 1
+end
+
+function defhandler(c)
+	c = tonumber(c)
+	return c and (math.floor(c / 2) % 2 == 1)
+end
+
+function msg_headers(file)
+	local f = io.open(file, "r")
+	if not f then
+		return false
+	end
+	local tags = { "From", "To", "Message-ID", "References", "Cc" }
+	for l in f:lines() do
+		if l == "" then
+			break
+		end
+		for _, t in ipairs(tags) do
+			if startswith(l, t) then
+				local a = split(l, ":")
+				tags[a[1]] = strip(a[2]:gsub('"', ""):gsub("'", ""))
+				break
+			end
+		end
+	end
+	f:close()
+	return tags
+end
+
+local winid = os.getenv("winid") or os.exit(1)
+
+if MSG then -- show message mode
+	local id = new()
+	write(id, 'tag', 'Reply')
+	showmsg(id, MSG)
+	events(id, function(a, b, c, d, e)
+		if startswith(a, 'Mx') and e == 'Reply' then
+			os.execute(string.format("%q --compose %q &", PROGNAME, MSG))
+			return true
+		end
+	end)
+	os.exit(0)
+elseif COMPOSE then -- compose mode
+	local id = new()
+	mount_namespace()
+	write(id, 'ctl', 'name /tmp/compose.msg\n')
+	write(id, 'tag', 'Put Post |fmt')
+	if REPLY then
+		local tags = msg_headers(REPLY)
+		if not tags then
+			print("Wrong reply msg")
+			os.exit(1)
+		end
+		write(id, 'data', 'To: '..tags.From..'\n')
+		if tags.Cc then
+			write(id, 'data', 'Cc: '..tags.Cc..'\n')
+		end
+		write(id, 'data', 'From: '..tags.To..'\n')
+		if tags['Message-ID'] then
+			write(id, 'data', 'In-Reply-To: '..tags['Message-ID']..'\n')
+		end
+		f = io.popen(string.format(MSGVIEW, REPLY), "r")
+		local n = 0
+		local start
+		
+		for l in f:lines() do
+			n = n + 1
+			if n > 4 then
+				if not start then
+					write(id, 'data', HEADERS)
+					start = true
+				end
+				write(id, 'data', '> '..l..'\n')
+			elseif startswith(l, "Subject:") then
+				local a = splitn(l, 1, ':')
+				local subj = a[2]
+				if not startswith(subj, "RE:") then
+					subj = "RE: "..subj
+				end
+				write(id, 'data', "Subject: "..subj..'\n')
+			end
+		end
+		f:close()
+	else
+		write(id, 'data', TEMPLATE)
+		write(id, 'data', HEADERS)
+	end
+	toline(id, 0)
+	unmount_namespace()
+	events(id, function(a, b, c, d, e)
+		if startswith(a, 'Mx') and e == 'Post' then
+			clean(id)
+			write(id, 'addr', '0,$')
+			local body = read(id, 'data')
+			local to = body:gsub("^To:([^\n]+)\n.*$", "%1")
+			to = strip(to)
+			if not to or to:find('\n') or not to:find('@') then
+				print("Wrong To:")
+				return true
+			end
+			local f, e = io.popen(string.format(SENDMAIL, to), "w")
+			if not f then
+				print(e)
+				return true
+			end
+			local r, e = f:write(body)
+			if not r then
+				f:close()
+				print(e)
+				return true
+			end
+			r, e = f:close()
+			if not r then
+				print(e)
+				return true
+			end
+			write(id, 'ctl', 'del')
+			if REPLY then
+				mark_reply(REPLY)
+			end
+			os.exit(0)
+		end
+	end)
+	os.exit(0)
+end
+
+winid = new() or os.exit(1)
+local emails = get()
+show(winid, emails)
+toline(winid, 0)
+write(winid, 'tag', 'Mark Remove Compose Read | Page 1')
+events(winid, function(a, b, c, d, e, f)
+	if startswith(a, 'Mx') and e == 'Compose' then
+		os.execute(PROGNAME.." --compose &")
+		return true
+	elseif startswith(a, 'Mx') and e == 'Remove' then
+		local start
+		read(winid, 'rdsel', function(l)
+			l = split(l)
+			local nr = msg_number(l[1]) or msg_number(l[2])
+			local fname = nr and emails[nr] and emails[nr].file
+			if fname then
+				start = start or nr
+				os.remove(fname)
+			end
+		end)
+		if start then
+			emails = get()
+			show(winid, emails)
+			toline(winid, start)
+		end
+		return true
+	elseif startswith(a, 'Mx') and e == 'Mark' then
+		local start
+		read(winid, 'rdsel', function(l)
+			l = split(l)
+			local nr = msg_number(l[1]) or msg_number(l[2])
+			local fname = nr and emails[nr] and emails[nr].file
+			if fname then
+				start = start or nr
+				mark_read(fname)
+			end
+		end)
+		if start then
+			emails = get()
+			show(winid, emails)
+			toline(winid, start)
+		end
+		return true
+	elseif startswith(a, 'Mx') and e == 'Page' then
+		f = tonumber(f) or 1
+		local ns = (f - 1) * PERPAGE + 1
+		if ns ~= START then
+			START = ns
+			emails = get()
+			show(winid, emails)
+			toline(winid, 0)
+		end
+		return true
+	elseif startswith(a, 'Mx') and e == 'Read' then
+		emails = get()
+		show(winid, emails)
+		toline(winid, 0)
+		return true
+	elseif startswith(a, 'ML') and msg_number(e) then
+		local nr = msg_number(e)
+		local f = emails[nr] and emails[nr].file
+		if not f then
+			return false
+		end
+--		f = os.getenv("MAILDIR").."/"..f
+		if not exists(f) then
+			return false
+		end
+		local nf = mark_read(f)
+		os.execute(string.format("%s --message %q &", PROGNAME, nf))
+		if nf ~= f then
+			emails = get()
+			show(winid, emails)
+			toline(winid, nr)
+		end
+		return true
+	end
+end)
+
+os.exit(0)
