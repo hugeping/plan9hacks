@@ -4,29 +4,46 @@ local field_date = 2
 local field_from = 3
 local field_subj = 4
 local START=1
+local SUBJLEN=64
 local PERPAGE=100
-local VIEW="mu find -s d --reverse --nocolor -f 'l|d|f|s' %q | /usr/bin/tail -n +%d | head -n "..tostring(PERPAGE)
+local VIEW="mu find -s d --reverse --nocolor -f 'l\1d\1f\1s' %q | /usr/bin/tail -n +%d | head -n %d"
+local VIEW_THREADED="mu find -r -t -s d --reverse --nocolor -f 'l\1d\1f\1s' %q | /usr/bin/tail -n +%d | head -n %d"
 local MSGVIEW="mu view --nocolor %q"
+local MIME="/usr/bin/file --mime-type %q"
+local EMAIL_COMPL="mu cfind --nocolor --format=mutt-ab %q"
+local BASE64="/usr/bin/base64 %q"
 local QUERY=""
+local OPEN="xdg-open %s"
 local EXTRACTDIR="/tmp/mu-query/"
 local SENDMAIL="msmtp --read-envelope-from %q"
-local TEMPLATE="To: \nFrom: nobody@fqdn.com\nSubject: \n"
-local HEADERS="Content-Type: text/plain; charset=UTF-8\n\n"
+local TEMPLATE="To: \nFrom: \n"
+local CONTENT_TYPE="Content-Type: text/plain; charset=UTF-8"
 local a = {...}
 local PROGNAME = arg[0]
 local MSG
 local COMPOSE
 local REPLY
+local FORWARD
 
 local NAMESPACE
-
-for _, v in ipairs(a) do
-	if v == '--message' then
+local skip
+for k, v in ipairs(a) do
+	if skip then
+		skip = false
+	elseif v == '--message' then
 		MSG=true
+	elseif v == '-t' then
+		VIEW=VIEW_THREADED
+	elseif v == '-n' then
+		skip = true
+		PERPAGE=tonumber(a[k+1]) or 100
 	elseif MSG == true then
 		MSG = v
 	elseif v == '--compose' then
 		COMPOSE=true
+	elseif v == '--forward' then
+		COMPOSE=true
+		FORWARD=true
 	elseif COMPOSE then
 		REPLY = v
 	else
@@ -54,11 +71,21 @@ function strip(str)
 	str = str:gsub("^[ \t]+",""):gsub("[ \t]+$","")
 	return str
 end
-
-function split(s, sep_arg)
+function split_lines(str)
+	local lines = {}
+	for s in str:gmatch("[^\n]*\n") do
+		s = s:gsub("\n", "")
+		table.insert(lines, s)
+	end
+	return lines
+end
+function split(s, sep_arg, strp)
+	if strp == nil then strp = true end
 	local sep, fields = sep_arg or " ", {}
 	local pattern = string.format("([^%s]+)", sep)
-	s:gsub(pattern, function(c) table.insert(fields, strip(c)) end)
+	s:gsub(pattern, function(c)
+		table.insert(fields, strp and strip(c) or c)
+	end)
 	return fields
 end
 
@@ -187,23 +214,31 @@ end
 function clean(id)
 	return write(id, 'ctl', 'clean')
 end
-
+function get_flags(fname)
+	local flags = ''
+	if fname:find(":2,", 1, true) then
+		flags = fname:gsub("^.*:2,([PRSTDF]*)$", "%1")
+	end
+	return flags
+end
 function get()
 	local t = {}
 	os.execute("mu index -q")
-	local f, e = io.popen(string.format(VIEW, QUERY, START), "r")
+	local f, e = io.popen(string.format(VIEW, QUERY, START, PERPAGE), "r")
 	if not f then
 		return f, e
 	end
 	for l in f:lines() do
-		l = split(l, "|")
-		local flags = l[1]
-		if flags:find(":2,", 1, true) then
-			flags = flags:gsub("^.*:2,([PRSTDF]*)$", "%1")
-		else
-			flags = ''
+		l = split(l, "\1", false)
+		local pfx
+		if l[1]:find("> ", 1, true) then
+			local s, e = l[1]:find("> ", 1, true)
+			pfx = l[1]:sub(1, e)
+			l[1] = l[1]:sub(e + 1)
 		end
+		flags = get_flags(l[1])
 		table.insert(t, {
+			pfx = pfx or '',
 			file = l[field_file],
 			date = l[field_date],
 			from = l[field_from],
@@ -214,17 +249,93 @@ function get()
 	return t
 end
 
+local function utf_ff(b, pos)
+	if type(b) ~= 'string' or b:len() == 0 then
+		return 0
+	end
+	local i = pos or 1
+	local l = 0
+	if b:byte(i) < 0x80 then
+		return 1
+	end
+	i = i + 1
+	l = l + 1
+	while b:byte(i) and b:byte(i) >= 0x80 and b:byte(i) <= 0xbf do
+		i = i + 1
+		l = l + 1
+		if i > b:len() then
+			break
+		end
+	end
+	return l
+end
+
+function utf_chars(b)
+	local i = 1
+	local s
+	local res = {}
+	local ff = utf_ff
+	while i <= b:len() do
+		s = i
+		i = i + ff(b, i)
+		table.insert(res,  b:sub(s, i - 1))
+	end
+	return res
+end
+
+function show_header(k, v)
+	local date = split(v.date," ")
+	date = date[2] .. ' '..date[3]
+	local from = v.from:gsub(" <[^>]+>", "")
+	local subj = v.subj
+	local chars = utf_chars(subj)
+	local pfx = v.pfx
+	local plen = #utf_chars(pfx)
+	local npfx = math.floor(SUBJLEN/3)
+	if plen > npfx then
+		pfx = pfx:sub(plen - npfx + 1)
+		plen = npfx
+	end
+	if #chars > SUBJLEN-3-plen then
+		subj = ''
+		for i = 1, SUBJLEN-3-plen do
+			subj = subj .. chars[i]
+		end
+		subj = subj .. '...'
+	else
+		for i = 1, SUBJLEN-#chars-plen do
+			subj = subj .. ' '
+		end
+	end
+	return string.format("%3d/ %+3s %s%s %s %s\n",k + START -1, v.flags, pfx, subj or '', date, from)
+end
 function show(id, t)
 	mount_namespace()
 	write(id, 'addr', "0,$")
+	if #t == 0 then write(id, 'data', '') end
 	for k, v in ipairs(t) do
-		local date = split(v.date," ") 
-		date = date[2] .. ' '..date[3]
-		write(id, 'data', string.format("%3d/ %+3s %s %s %s\n",k + START -1, v.flags, date, v.from, v.subj or ''))
+		write(id, 'data', show_header(k, v))
 	end
 	clean(id)
 	unmount_namespace()
 	return true
+end
+
+function extract(id, fname)
+	os.execute(string.format("rm %q/* 2>/dev/null", EXTRACTDIR))
+	os.execute(string.format("mkdir %q 2>/dev/null", EXTRACTDIR))
+	os.execute(string.format("mu extract --save-all --nocolor --target-dir=%q %q", EXTRACTDIR, fname))
+	f = io.popen(string.format("find %q -type f", EXTRACTDIR), "r")
+	write(id, 'data', '\nFiles:\n')
+	if f then
+		write(id, 'data', function()
+			local l = f:read("*line")
+			if l then l = string.format(OPEN, l) end
+			return l
+		end)
+		f:close()
+	end
+	clean(id)
 end
 
 function showmsg(id, fname)
@@ -236,21 +347,8 @@ function showmsg(id, fname)
 		return f:read("*line")
 	end)
 	f:close()
-	os.execute(string.format("rm %q/* 2>/dev/null", EXTRACTDIR))
-	os.execute(string.format("mkdir %q 2>/dev/null", EXTRACTDIR))
-	os.execute(string.format("mu extract --save-all --nocolor --target-dir=%q %q", EXTRACTDIR, fname))
-	f = io.popen(string.format("find %q -type f", EXTRACTDIR), "r")
-	mount_namespace()
-	write(id, 'data', '\nFiles:\n')
-	if f then
-		write(id, 'data', function()
-			return f:read("*line")
-		end)
-		f:close()
-	end
 	toline(id, 0)
 	clean(id)
-	unmount_namespace()
 	return true
 end
 
@@ -345,15 +443,125 @@ function msg_headers(file)
 	return tags
 end
 
+function popen(proc, fn)
+	local f, e = io.popen(proc, "r")
+	if not f then
+		return f, e
+	end
+	for l in f:lines() do
+		if fn(l) then
+			break
+		end
+	end
+	f:close()
+	return true
+end
+
+function file_base64(fname)
+	local f, e = io.popen(string.format(MIME, fname), "r")
+	if not f then
+		return f, e
+	end
+	local l = f:read("*line") or ''
+	local t = split(l, ':')[2]
+	if not t then
+		return false, "Can't determine mime type"
+	end
+	f:close()
+	f, e = io.popen(string.format(BASE64, fname), "r")
+	if not f then
+		return f, e
+	end
+	local b = f:read("*all")
+	if not b then
+		return false, "Can't encode file"
+	end
+	f:close()
+	return t, b
+end
+
+local function basename(p)
+	p = p:gsub("^.*[/\\]([^/\\]+)$", "%1")
+	return p
+end
+
+function mail_filter(b)
+	local lines = split_lines(b)
+	local headers = ""
+	local attachments = {}
+	local body = ""
+	local hdr = true
+	while #lines > 1 and lines[#lines] == "" do
+		table.remove(lines, #lines)
+	end
+	for k, v in ipairs(lines) do
+		if not hdr then
+			body = body .. v .. '\n'
+		elseif v == "" then
+			hdr = false
+		elseif startswith(v, "Attach:") then
+			local f = split(v, ":")[2]
+			if not f or not exists(f) then
+				return false, "Wrong attach: "..tostring(f)
+			end
+			table.insert(attachments, f)
+		elseif not startswith(v, "Content-Type:") then
+			headers = headers .. v .. '\n'
+		end
+	end
+	if #attachments == 0 then
+		return headers .. CONTENT_TYPE .. '\n\n' .. body
+	end
+	local txt = ''
+--	for _, v in ipairs(headers) do
+--		txt = txt .. v .. '\n'
+--	end
+	local bound = "--============--"
+	txt = headers
+	txt = txt .. 'Content-Type: multipart/mixed; boundary="'.. bound.. '"\n\n'
+	txt = txt .. 'This is a MIME formatted message. If you see this text it means that your email software does not support MIME formatted messages.\n\n'
+	txt = txt .. "--"..bound .. '\n'
+	txt = txt .. "Content-Type: text/plain; charset=UTF-8\n"
+	txt = txt .. "Content-Disposition: inline\n\n"
+	txt = txt .. body .. "\n"
+	txt = txt .. "--"..bound .. '\n'
+	for _, v in ipairs(attachments) do
+		local t, b = file_base64(v)
+		if not t then
+			return t, b
+		end
+		txt = txt .. string.format("Content-Type: %s; name=%q\n", t, basename(v))
+		txt = txt .. "Content-Transfer-Encoding: base64\n"
+		txt = txt .. string.format("Content-Disposition: attachment; filename=%q;\n\n", basename(v))
+		txt = txt .. b
+		txt = txt .. "--"..bound .. '\n'
+	end
+	return txt
+end
+
+function quote(id, l)
+	write(id, 'data', '>'..l..'\n')
+end
+
 local winid = os.getenv("winid") or os.exit(1)
 
 if MSG then -- show message mode
 	local id = new()
-	write(id, 'tag', 'Reply')
+	write(id, 'tag', 'Reply Forward Raw Extract')
 	showmsg(id, MSG)
 	events(id, function(a, b, c, d, e)
 		if startswith(a, 'Mx') and e == 'Reply' then
 			os.execute(string.format("%q --compose %q &", PROGNAME, MSG))
+			return true
+		elseif startswith(a, 'Mx') and e == 'Forward' then
+			os.execute(string.format("%q --forward %q &", PROGNAME, MSG))
+			return true
+		elseif startswith(a, 'Mx') and e == 'Raw' then
+			print(MSG)
+			return true
+		elseif startswith(a, 'Mx') and e == 'Extract' then
+			toline(id, "$,$")
+			extract(id, MSG)
 			return true
 		end
 	end)
@@ -361,59 +569,122 @@ if MSG then -- show message mode
 elseif COMPOSE then -- compose mode
 	local id = new()
 	mount_namespace()
-	write(id, 'ctl', 'name /tmp/compose.msg\n')
-	write(id, 'tag', 'Put Post |fmt')
-	if REPLY then
+	local headers = ''
+	local fname = string.format("/tmp/compose-%d.msg", os.time())
+	write(id, 'ctl', 'name '..fname..'\n')
+	write(id, 'tag', 'Put Post |fmt Addr Paste Undo')
+	if REPLY and FORWARD then
+		write(id, 'data', TEMPLATE)
+	elseif REPLY then
 		local tags = msg_headers(REPLY)
 		if not tags then
 			print("Wrong reply msg")
 			os.exit(1)
 		end
-		write(id, 'data', 'To: '..tags.From..'\n')
 		if tags.Cc then
-			write(id, 'data', 'Cc: '..tags.Cc..'\n')
+			headers = headers .. 'Cc: '..tags.Cc..'\n'
 		end
-		write(id, 'data', 'From: '..tags.To..'\n')
 		if tags['Message-ID'] then
-			write(id, 'data', 'In-Reply-To: '..tags['Message-ID']..'\n')
+			headers = headers .. 'In-Reply-To: '..tags['Message-ID']..'\n'
 		end
-		f = io.popen(string.format(MSGVIEW, REPLY), "r")
+	end
+	if REPLY then
+		local f, e = io.popen(string.format(MSGVIEW, REPLY), "r")
+		if not f then
+			print(e)
+			os.exit(1)
+		end
 		local n = 0
 		local start
-		
+		local from, to, subj
 		for l in f:lines() do
 			n = n + 1
 			if n > 4 then
 				if not start then
-					write(id, 'data', HEADERS)
+					if REPLY and not FORWARD then
+						write(id, 'data', 'To: '..from..'\n')
+						write(id, 'data', 'From: '..to..'\n')
+					end
+					write(id, 'data', 'Subject: '..subj..'\n')
+					if headers ~= '' then
+						write(id, 'data', headers)
+					end
+					write(id, 'data', "\n")
 					start = true
+					if FORWARD then
+						write(id, 'data', string.format("Forwarded form %q on %s.\n\n", from, os.date()))
+					end
 				end
-				write(id, 'data', '> '..l..'\n')
+				if not FORWARD then
+					quote(id, l)
+
+				else
+					write(id, 'data', l..'\n')
+				end
+			elseif startswith(l, "From: ") then
+				local a = splitn(l, 1, ':')
+				from = strip(a[2])
+			elseif startswith(l, "To: ") then
+				local a = splitn(l, 1, ':')
+				to = strip(a[2])
 			elseif startswith(l, "Subject:") then
 				local a = splitn(l, 1, ':')
-				local subj = a[2]
-				if not startswith(subj, "RE:") then
-					subj = "RE: "..subj
+				subj = strip(a[2])
+				if FORWARD then
+					subj = "Fwd: "..subj
+				else
+					if not startswith(subj, "Re:") then
+						subj = "Re: "..subj
+					end
 				end
-				write(id, 'data', "Subject: "..subj..'\n')
 			end
 		end
 		f:close()
 	else
 		write(id, 'data', TEMPLATE)
-		write(id, 'data', HEADERS)
+		write(id, 'data', 'Subject: \n')
+		write(id, 'data', "\n")
 	end
 	toline(id, 0)
 	unmount_namespace()
-	events(id, function(a, b, c, d, e)
-		if startswith(a, 'Mx') and e == 'Post' then
+	events(id, function(a, b, c, d, e, f)
+		if startswith(a, 'Mx') and e == 'Addr' then
+			local sel = read(id, 'rdsel')
+			f = f or sel
+			local replaced
+			if f and f ~= '' then
+				popen(string.format(EMAIL_COMPL, f), function(l)
+					l = l:gsub("\t", " ")
+					local a = splitn(l, 1, ' ', true)
+					if not a[1]:find '@' then
+						return
+					end
+					if a == 1 then l = a[1] else
+						l = string.format("%s <%s>", strip(a[2]), a[1])
+					end
+					if not replaced and sel ~= '' then
+						write(id, 'wrsel', l)
+						replaced = true
+					else
+						print(l)
+					end
+				end)
+			end
+			return true
+		elseif startswith(a, 'Mx') and e == 'Post' then
 			clean(id)
 			write(id, 'addr', '0,$')
 			local body = read(id, 'data')
 			local to = body:gsub("^To:([^\n]+)\n.*$", "%1")
+			local err
 			to = strip(to)
 			if not to or to:find('\n') or not to:find('@') then
 				print("Wrong To:")
+				return true
+			end
+			body, err = mail_filter(body)
+			if not body then
+				print(err)
 				return true
 			end
 			local f, e = io.popen(string.format(SENDMAIL, to), "w")
@@ -446,24 +717,48 @@ winid = new() or os.exit(1)
 local emails = get()
 show(winid, emails)
 toline(winid, 0)
-write(winid, 'tag', 'Mark Remove Compose Read | Page 1')
+write(winid, 'tag', 'Mark Remove Compose Read Next | Page 1')
+
+function mark_read_update(id, nr)
+	local fname = nr and emails[nr] and emails[nr].file
+	if not fname or not exists(fname) then
+		return
+	end
+	local fname2 = mark_read(fname)
+	if fname2 == fname then
+		return
+	end
+	emails[nr].file = fname2
+	emails[nr].flags = get_flags(fname2)
+	write(id, 'addr', string.format("%d,%d", nr, nr))
+	local v = emails[nr]
+	write(id, 'data', show_header(nr, v))
+end
+
+
 events(winid, function(a, b, c, d, e, f)
 	if startswith(a, 'Mx') and e == 'Compose' then
 		os.execute(PROGNAME.." --compose &")
 		return true
 	elseif startswith(a, 'Mx') and e == 'Remove' then
 		local start
+		local delnr = 0
 		read(winid, 'rdsel', function(l)
 			l = split(l)
 			local nr = msg_number(l[1]) or msg_number(l[2])
 			local fname = nr and emails[nr] and emails[nr].file
-			if fname then
+			if fname and exists(fname) then
 				start = start or nr
 				os.remove(fname)
+				delnr = delnr + 1
 			end
 		end)
-		if start then
-			emails = get()
+		if start and delnr > 0 then
+			while delnr > 0 do
+				table.remove(emails, start)
+				delnr = delnr - 1
+			end
+			-- emails = get()
 			show(winid, emails)
 			toline(winid, start)
 		end
@@ -473,15 +768,10 @@ events(winid, function(a, b, c, d, e, f)
 		read(winid, 'rdsel', function(l)
 			l = split(l)
 			local nr = msg_number(l[1]) or msg_number(l[2])
-			local fname = nr and emails[nr] and emails[nr].file
-			if fname then
-				start = start or nr
-				mark_read(fname)
-			end
+			start = start or nr
+			mark_read_update(winid, nr)
 		end)
 		if start then
-			emails = get()
-			show(winid, emails)
 			toline(winid, start)
 		end
 		return true
@@ -495,6 +785,19 @@ events(winid, function(a, b, c, d, e, f)
 			toline(winid, 0)
 		end
 		return true
+	elseif startswith(a, 'Mx') and e == 'Next' then
+		local found
+		for k, v in ipairs(emails) do
+			if not v.flags:find"S" then
+				found = k
+				break
+			end
+		end
+		if not found then
+			return true
+		end
+		toline(winid, found)
+		return true
 	elseif startswith(a, 'Mx') and e == 'Read' then
 		emails = get()
 		show(winid, emails)
@@ -502,21 +805,13 @@ events(winid, function(a, b, c, d, e, f)
 		return true
 	elseif startswith(a, 'ML') and msg_number(e) then
 		local nr = msg_number(e)
+		mark_read_update(winid, nr)
 		local f = emails[nr] and emails[nr].file
-		if not f then
+		if not f or not exists(f) then
 			return false
 		end
---		f = os.getenv("MAILDIR").."/"..f
-		if not exists(f) then
-			return false
-		end
-		local nf = mark_read(f)
-		os.execute(string.format("%s --message %q &", PROGNAME, nf))
-		if nf ~= f then
-			emails = get()
-			show(winid, emails)
-			toline(winid, nr)
-		end
+		os.execute(string.format("%s --message %q &", PROGNAME, f))
+		toline(winid, nr)
 		return true
 	end
 end)
