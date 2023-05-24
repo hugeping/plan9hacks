@@ -1,4 +1,4 @@
-#!/usr/bin/env lua
+#!/usr/bin/env lua5.3
 local field_file = 1
 local field_date = 2
 local field_from = 3
@@ -73,7 +73,11 @@ function strip(str)
 end
 function split_lines(str)
 	local lines = {}
-	for s in str:gmatch("[^\n]*\n") do
+	str = str:gsub("\r", "") -- no Windows lines
+	if not str:find("\n$") then
+		str = str .. "\n"
+	end
+	for s in str:gmatch("[^\n\r]*\n") do
 		s = s:gsub("\n", "")
 		table.insert(lines, s)
 	end
@@ -287,7 +291,7 @@ function show_header(k, v)
 	local date = split(v.date," ")
 	date = date[2] .. ' '..date[3]
 	local from = v.from:gsub(" <[^>]+>", "")
-	local subj = v.subj
+	local subj = v.subj or ''
 	local chars = utf_chars(subj)
 	local pfx = v.pfx
 	local plen = #utf_chars(pfx)
@@ -312,7 +316,7 @@ end
 function show(id, t)
 	mount_namespace()
 	write(id, 'addr', "0,$")
-	if #t == 0 then write(id, 'data', '') end
+	if #t == 0 then write(id, 'data', 'No data') end
 	for k, v in ipairs(t) do
 		write(id, 'data', show_header(k, v))
 	end
@@ -434,7 +438,7 @@ function msg_headers(file)
 		for _, t in ipairs(tags) do
 			if startswith(l, t) then
 				local a = split(l, ":")
-				tags[a[1]] = strip(a[2]:gsub('"', ""):gsub("'", ""))
+				tags[a[1]] = strip((a[2] or ''):gsub('"', ""):gsub("'", ""))
 				break
 			end
 		end
@@ -485,6 +489,28 @@ local function basename(p)
 	return p
 end
 
+function mail_sent(b)
+	local f = io.popen ("hostname")
+	local hostname = f:read("*a") or ""
+	f:close()
+	hostname = string.gsub(hostname, "\n", "")
+	math.randomseed(math.floor(os.clock()*1000000))
+	local hex = ''
+	local n = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 'a', 'b', 'c', 'd', 'e', 'f' }
+	for i=1,16 do
+		hex = hex .. n[math.random(15) + 1]
+	end
+	local fname = string.format("%d.%s.%s:2,S", os.time(), hex, hostname)
+	local mdir = os.getenv('MAILDIR')
+	if not mdir then return true end
+	fname = string.format("%s/sent/cur/%s", mdir, fname)
+	local f, e = io.open(fname, "w")
+	if not f then return f, e end
+	f:write(b)
+	f:close()
+	return true
+end
+
 function mail_filter(b)
 	local lines = split_lines(b)
 	local headers = ""
@@ -509,6 +535,16 @@ function mail_filter(b)
 			headers = headers .. v .. '\n'
 		end
 	end
+
+	local f = io.popen("/bin/date -R")
+	if f then
+		local d = f:read("*all")
+		f:close()
+		if d then
+			headers = headers .. 'Date: ' .. d:gsub("[\n]+$", "") .. '\n'
+		end
+	end
+
 	if #attachments == 0 then
 		return headers .. CONTENT_TYPE .. '\n\n' .. body
 	end
@@ -706,6 +742,10 @@ elseif COMPOSE then -- compose mode
 			write(id, 'ctl', 'del')
 			if REPLY then
 				mark_reply(REPLY)
+			end
+			r, e = mail_sent(body)
+			if not r then
+				print(e)
 			end
 			os.exit(0)
 		end
